@@ -1,0 +1,148 @@
+// src/services/consultaService.js
+
+import api from './api';
+
+const consultaService = {
+  /**
+   * Buscar persona por documento (consulta RPA si no existe)
+   * @param {string} documento - Número de cédula
+   * @returns {Promise}
+   */
+  async buscarPersona(documento) {
+    try {
+      const response = await api.post('/consultas/buscar', { documento });
+
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error en la búsqueda'
+      };
+    }
+  },
+
+  /**
+   * Obtener estado de una consulta RPA
+   * @param {string} consultaId - ID de la consulta
+   * @returns {Promise}
+   */
+  async obtenerEstado(consultaId) {
+    try {
+      const response = await api.get(`/consultas/estado/${consultaId}`);
+
+      return {
+        success: response.data.success,
+        consulta: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al obtener estado'
+      };
+    }
+  },
+
+  /**
+   * Confirmar persona y agregar a la base de datos
+   * @param {string} personaId - ID de la persona
+   * @param {Object} datosAdicionales - Datos adicionales (teléfono, email, etc.)
+   * @returns {Promise}
+   */
+  async confirmarPersona(personaId, datosAdicionales = {}) {
+    try {
+      const response = await api.post(`/consultas/confirmar/${personaId}`, datosAdicionales);
+
+      return {
+        success: response.data.success,
+        persona: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al confirmar persona'
+      };
+    }
+  },
+
+  /**
+   * Crear nueva consulta RPA para obtener datos electorales
+   * @param {string} documento - Número de cédula
+   * @param {number} prioridad - Prioridad de la consulta (1-5, default: 2)
+   * @returns {Promise}
+   */
+  async crearConsultaRPA(documento, prioridad = 2) {
+    try {
+      const response = await api.post('/consultas', {
+        documento,
+        prioridad
+      });
+
+      return {
+        success: response.data.success,
+        consulta: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al crear consulta RPA'
+      };
+    }
+  },
+
+  /**
+   * Polling automático del estado de una consulta
+   * @param {string} consultaId - ID de la consulta
+   * @param {Function} onUpdate - Callback que se ejecuta en cada actualización
+   * @param {number} maxIntentos - Máximo de intentos (default: 60)
+   * @returns {Promise}
+   */
+  async pollEstado(consultaId, onUpdate = null, maxIntentos = 60) {
+    let intentos = 0;
+
+    return new Promise((resolve, reject) => {
+      const interval = setInterval(async () => {
+        intentos++;
+
+        try {
+          const resultado = await this.obtenerEstado(consultaId);
+
+          if (resultado.success) {
+            const consulta = resultado.consulta;
+
+            // Llamar callback de actualización si existe
+            if (onUpdate) {
+              onUpdate(consulta);
+            }
+
+            // Si completó o tuvo error, terminar polling
+            if (consulta.estado === 'COMPLETADO' || consulta.estado === 'ERROR') {
+              clearInterval(interval);
+              resolve(consulta);
+            }
+
+            // Si llegó al máximo de intentos
+            if (intentos >= maxIntentos) {
+              clearInterval(interval);
+              reject(new Error('Timeout: La consulta tomó demasiado tiempo'));
+            }
+          } else {
+            clearInterval(interval);
+            reject(new Error(resultado.error));
+          }
+        } catch (error) {
+          clearInterval(interval);
+          reject(error);
+        }
+      }, 3000); // Cada 3 segundos
+    });
+  }
+};
+
+export default consultaService;

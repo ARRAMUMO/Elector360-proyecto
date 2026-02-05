@@ -1,0 +1,947 @@
+{
+  "info": {
+    "_postman_id": "elector360-api-v1",
+    "name": "Elector360 API",
+    "description": "Colección de endpoints para el sistema de gestión electoral Elector360.\n\n## Autenticación\nLa mayoría de endpoints requieren autenticación JWT. Usa el endpoint de Login para obtener el token y configúralo en la variable `{{token}}`.\n\n## Variables\n- `{{base_url}}`: URL base de la API\n- `{{token}}`: Token JWT de autenticación",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Endpoints de autenticación",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.collectionVariables.set('token', jsonData.data.accessToken);",
+                  "    console.log('Token guardado automáticamente');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@elector360.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Iniciar sesión y obtener token JWT.\n\n**Credenciales de prueba:**\n- Admin: admin@elector360.com / password123\n- Líder: lider1@elector360.com / lider123456"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Renovar token JWT usando refresh token."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Me (Perfil actual)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Obtener perfil del usuario autenticado."
+          },
+          "response": []
+        },
+        {
+          "name": "Register (Solo Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nuevo@ejemplo.com\",\n  \"password\": \"password123\",\n  \"rol\": \"LIDER\",\n  \"perfil\": {\n    \"nombres\": \"Juan Carlos\",\n    \"apellidos\": \"Pérez Gómez\",\n    \"telefono\": \"3001234567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Registrar nuevo usuario. Solo administradores."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Cerrar sesión e invalidar token."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPassword\": \"newPassword456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "change-password"]
+            },
+            "description": "Cambiar contraseña del usuario actual."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Personas",
+      "description": "Gestión de personas/votantes",
+      "item": [
+        {
+          "name": "Listar Personas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["personas"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "estadoContacto",
+                  "value": "PENDIENTE",
+                  "disabled": true
+                },
+                {
+                  "key": "departamento",
+                  "value": "ATLANTICO",
+                  "disabled": true
+                },
+                {
+                  "key": "municipio",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "mesa",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Listar personas con filtros y paginación.\n\n**Query params:**\n- page: Número de página\n- limit: Resultados por página\n- search: Buscar por nombre o documento\n- estadoContacto: PENDIENTE, CONTACTADO, CONFIRMADO, NO_CONTACTADO\n- departamento: Filtrar por departamento\n- municipio: Filtrar por municipio\n- mesa: Filtrar por mesa de votación"
+          },
+          "response": []
+        },
+        {
+          "name": "Crear Persona",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"12345678\",\n  \"nombres\": \"Juan Carlos\",\n  \"apellidos\": \"Pérez Gómez\",\n  \"telefono\": \"3001234567\",\n  \"email\": \"juan@ejemplo.com\",\n  \"estadoContacto\": \"PENDIENTE\",\n  \"puesto\": {\n    \"departamento\": \"ATLANTICO\",\n    \"municipio\": \"BARRANQUILLA\",\n    \"zona\": \"URBANA\",\n    \"nombrePuesto\": \"IE MARIA EMMA\",\n    \"direccion\": \"CRA 12 No 6-61\",\n    \"mesa\": \"5\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/personas",
+              "host": ["{{base_url}}"],
+              "path": ["personas"]
+            },
+            "description": "Crear nueva persona."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Persona por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personas", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Obtener persona por su ID de MongoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Persona por Documento",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/documento/:documento",
+              "host": ["{{base_url}}"],
+              "path": ["personas", "documento", ":documento"],
+              "variable": [
+                {
+                  "key": "documento",
+                  "value": "12345678"
+                }
+              ]
+            },
+            "description": "Obtener persona por número de documento/cédula."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Persona",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombres\": \"Juan Carlos\",\n  \"apellidos\": \"Pérez Gómez\",\n  \"telefono\": \"3009876543\",\n  \"estadoContacto\": \"CONTACTADO\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/personas/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personas", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Actualizar datos de una persona."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar Persona (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/:id",
+              "host": ["{{base_url}}"],
+              "path": ["personas", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Eliminar persona. Solo administradores."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Mesas de Votación",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/mesas?departamento=ATLANTICO",
+              "host": ["{{base_url}}"],
+              "path": ["personas", "mesas"],
+              "query": [
+                {
+                  "key": "departamento",
+                  "value": "ATLANTICO"
+                },
+                {
+                  "key": "municipio",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "nombrePuesto",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Obtener lista de mesas de votación con estadísticas."
+          },
+          "response": []
+        },
+        {
+          "name": "Personas por Mesa",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/mesas/detalle?departamento=ATLANTICO&municipio=POLONUEVO&nombrePuesto=IE MARIA EMMA&mesa=5",
+              "host": ["{{base_url}}"],
+              "path": ["personas", "mesas", "detalle"],
+              "query": [
+                {
+                  "key": "departamento",
+                  "value": "ATLANTICO"
+                },
+                {
+                  "key": "municipio",
+                  "value": "POLONUEVO"
+                },
+                {
+                  "key": "nombrePuesto",
+                  "value": "IE MARIA EMMA"
+                },
+                {
+                  "key": "mesa",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Obtener todas las personas de una mesa específica."
+          },
+          "response": []
+        },
+        {
+          "name": "Exportar CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/personas/export/csv",
+              "host": ["{{base_url}}"],
+              "path": ["personas", "export", "csv"]
+            },
+            "description": "Exportar personas a archivo CSV."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Consultas RPA",
+      "description": "Consultas automatizadas a la Registraduría",
+      "item": [
+        {
+          "name": "Buscar Persona (RPA)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"12345678\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/consultas/buscar",
+              "host": ["{{base_url}}"],
+              "path": ["consultas", "buscar"]
+            },
+            "description": "Buscar persona por cédula. Si no existe o está desactualizada, encola consulta RPA a la Registraduría.\n\n**Respuestas posibles:**\n1. Persona encontrada en BD (actualizada)\n2. Persona encontrada pero desactualizada → devuelve datos + consultaId\n3. Persona no existe → devuelve consultaId para polling\n\n**Documento debe tener entre 7 y 10 dígitos**"
+          },
+          "response": []
+        },
+        {
+          "name": "Estado de Consulta (Polling)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/consultas/estado/:consultaId",
+              "host": ["{{base_url}}"],
+              "path": ["consultas", "estado", ":consultaId"],
+              "variable": [
+                {
+                  "key": "consultaId",
+                  "value": "64ghi789..."
+                }
+              ]
+            },
+            "description": "Obtener estado de una consulta RPA. Usar para polling cada 3 segundos.\n\n**Estados posibles:**\n- EN_COLA: Pendiente de procesar\n- PROCESANDO: En proceso\n- COMPLETADO: Finalizado con éxito\n- ERROR: Falló después de reintentos"
+          },
+          "response": []
+        },
+        {
+          "name": "Confirmar Persona",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombres\": \"Juan Carlos\",\n  \"apellidos\": \"Pérez Gómez\",\n  \"telefono\": \"3001234567\",\n  \"email\": \"juan@ejemplo.com\",\n  \"puesto\": {\n    \"departamento\": \"ATLANTICO\",\n    \"municipio\": \"BARRANQUILLA\",\n    \"nombrePuesto\": \"IE MARIA EMMA\",\n    \"direccion\": \"CRA 12 No 6-61\",\n    \"mesa\": \"5\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/consultas/confirmar/:personaId",
+              "host": ["{{base_url}}"],
+              "path": ["consultas", "confirmar", ":personaId"],
+              "variable": [
+                {
+                  "key": "personaId",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Confirmar y agregar persona a la base del líder. Permite completar datos personales que no devuelve la Registraduría."
+          },
+          "response": []
+        },
+        {
+          "name": "Historial de Consultas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/consultas/historial?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["consultas", "historial"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "estado",
+                  "value": "COMPLETADO",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Obtener historial de consultas RPA del usuario."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Usuarios (Admin)",
+      "description": "Gestión de usuarios del sistema. Solo administradores.",
+      "item": [
+        {
+          "name": "Listar Usuarios",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Listar todos los usuarios del sistema."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear Usuario",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nuevo@ejemplo.com\",\n  \"password\": \"password123\",\n  \"rol\": \"LIDER\",\n  \"perfil\": {\n    \"nombres\": \"Nuevo\",\n    \"apellidos\": \"Usuario\",\n    \"telefono\": \"3001234567\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Crear nuevo usuario."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Usuario",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios/:id",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Obtener usuario por ID."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfil\": {\n    \"nombres\": \"Nombre Actualizado\",\n    \"apellidos\": \"Apellido Actualizado\"\n  },\n  \"rol\": \"LIDER\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/:id",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Actualizar datos de usuario."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar Usuario",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios/:id",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Eliminar usuario del sistema."
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle Estado Usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios/:id/toggle-estado",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", ":id", "toggle-estado"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Activar o desactivar usuario."
+          },
+          "response": []
+        },
+        {
+          "name": "Estadísticas de Usuario",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios/:id/estadisticas",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", ":id", "estadisticas"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "64abc123..."
+                }
+              ]
+            },
+            "description": "Obtener estadísticas de actividad del usuario."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Worker RPA (Admin)",
+      "description": "Control y monitoreo del worker RPA. Solo administradores.",
+      "item": [
+        {
+          "name": "Estadísticas del Worker",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/stats",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "stats"]
+            },
+            "description": "Obtener estadísticas del worker RPA: workers activos, consultas en cola, completadas, fallidas, etc."
+          },
+          "response": []
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/health",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "health"]
+            },
+            "description": "Health check del worker RPA."
+          },
+          "response": []
+        },
+        {
+          "name": "Estado Circuit Breaker",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/circuit-breaker",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "circuit-breaker"]
+            },
+            "description": "Obtener estado del circuit breaker: CLOSED, OPEN, HALF_OPEN."
+          },
+          "response": []
+        },
+        {
+          "name": "Pausar Worker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/pause",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "pause"]
+            },
+            "description": "Pausar el procesamiento del worker RPA."
+          },
+          "response": []
+        },
+        {
+          "name": "Reanudar Worker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/resume",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "resume"]
+            },
+            "description": "Reanudar el procesamiento del worker RPA."
+          },
+          "response": []
+        },
+        {
+          "name": "Reintentar Consulta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/retry/:consultaId",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "retry", ":consultaId"],
+              "variable": [
+                {
+                  "key": "consultaId",
+                  "value": "64ghi789..."
+                }
+              ]
+            },
+            "description": "Reintentar una consulta fallida."
+          },
+          "response": []
+        },
+        {
+          "name": "Limpiar Consultas Antiguas",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/clean",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "clean"]
+            },
+            "description": "Limpiar consultas antiguas completadas o fallidas."
+          },
+          "response": []
+        },
+        {
+          "name": "Logs Recientes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/worker/logs?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["worker", "logs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Obtener logs recientes del worker RPA."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
