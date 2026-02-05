@@ -153,11 +153,13 @@ function Consulta() {
     setPolling(true);
     let progresoActual = 0;
     let intentos = 0;
-    const maxIntentos = 60; // 60 intentos x 3 segundos = 3 minutos máximo
+    let errores429 = 0;
+    const maxIntentos = 36; // 36 intentos x 5 segundos = 3 minutos máximo
+    let intervaloActual = 5000; // 5 segundos inicial
 
     // Intervalo para actualizar la barra de progreso
     const intervaloProgreso = setInterval(() => {
-      progresoActual += 2;
+      progresoActual += 1.5;
       if (progresoActual <= 90) {
         setProgreso(progresoActual);
       }
@@ -171,6 +173,12 @@ function Consulta() {
       try {
         const resultado = await consultaService.obtenerEstado(consultaId);
         console.log('Estado actual:', resultado);
+
+        // Reset errores 429 si la consulta fue exitosa
+        if (resultado.success) {
+          errores429 = 0;
+          intervaloActual = 5000; // Restaurar intervalo normal
+        }
 
         if (resultado.success && resultado.consulta) {
           setConsultaRPA(resultado.consulta);
@@ -216,7 +224,7 @@ function Consulta() {
 
           // Aún procesando - continuar polling
           if (intentos < maxIntentos) {
-            setTimeout(verificarEstado, 3000);
+            setTimeout(verificarEstado, intervaloActual);
           } else {
             // Timeout
             clearInterval(intervaloProgreso);
@@ -224,9 +232,16 @@ function Consulta() {
             setAlert({ type: 'warning', message: '⚠️ La consulta está tomando más tiempo del esperado. Por favor, intenta de nuevo.' });
           }
         } else {
-          // Error al obtener estado
+          // Error al obtener estado - verificar si es 429
+          if (resultado.error?.includes('Demasiadas')) {
+            errores429++;
+            // Aumentar intervalo con backoff exponencial
+            intervaloActual = Math.min(intervaloActual * 1.5, 15000);
+            console.log(`Rate limit alcanzado (${errores429}x), aumentando intervalo a ${intervaloActual}ms`);
+          }
+
           if (intentos < maxIntentos) {
-            setTimeout(verificarEstado, 3000);
+            setTimeout(verificarEstado, intervaloActual);
           } else {
             clearInterval(intervaloProgreso);
             setPolling(false);
@@ -236,7 +251,7 @@ function Consulta() {
       } catch (error) {
         console.error('Error en polling:', error);
         if (intentos < maxIntentos) {
-          setTimeout(verificarEstado, 3000);
+          setTimeout(verificarEstado, intervaloActual);
         } else {
           clearInterval(intervaloProgreso);
           setPolling(false);
@@ -246,7 +261,7 @@ function Consulta() {
     };
 
     // Iniciar el polling después de un pequeño delay
-    setTimeout(verificarEstado, 2000);
+    setTimeout(verificarEstado, 3000);
   };
 
   const limpiar = () => {

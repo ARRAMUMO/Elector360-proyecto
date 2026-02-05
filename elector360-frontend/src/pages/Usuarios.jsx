@@ -19,6 +19,7 @@ function Usuarios() {
     apellidos: '',
     telefono: ''
   });
+  const [modalAlert, setModalAlert] = useState(null);
 
   useEffect(() => {
     cargarUsuarios();
@@ -29,8 +30,8 @@ function Usuarios() {
     try {
       const response = await api.get('/usuarios');
       if (response.data.success) {
-        // CRITICAL: Asegurarse de que sea un array
-        const usuariosData = response.data.data;
+        // El backend devuelve { data: { usuarios: [], pagination: {} } }
+        const usuariosData = response.data.data?.usuarios || response.data.data;
         setUsuarios(Array.isArray(usuariosData) ? usuariosData : []);
       } else {
         setUsuarios([]);
@@ -67,6 +68,7 @@ function Usuarios() {
     }
     setShowModal(true);
     setAlert(null);
+    setModalAlert(null);
   };
 
   const cerrarModal = () => {
@@ -81,45 +83,64 @@ function Usuarios() {
       telefono: ''
     });
     setAlert(null);
+    setModalAlert(null);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setModalAlert(null);
+
+    // Formatear datos para el backend
+    const dataToSend = {
+      email: formData.email,
+      rol: formData.rol,
+      perfil: {
+        nombres: formData.nombres,
+        apellidos: formData.apellidos,
+        telefono: formData.telefono || undefined
+      }
+    };
+
+    // Solo incluir password si tiene valor
+    if (formData.password) {
+      dataToSend.password = formData.password;
+    }
 
     try {
       if (editingUser) {
         // Actualizar usuario
-        const dataToSend = { ...formData };
-        if (!dataToSend.password) {
-          delete dataToSend.password;
-        }
-
         const response = await api.put(`/usuarios/${editingUser._id}`, dataToSend);
-        
+
         if (response.data.success) {
           setAlert({ type: 'success', message: '✅ Usuario actualizado exitosamente' });
           cerrarModal();
           cargarUsuarios();
         } else {
-          setAlert({ type: 'error', message: response.data.error });
+          setModalAlert({ type: 'error', message: response.data.error });
         }
       } else {
-        // Crear usuario
-        const response = await api.post('/usuarios', formData);
-        
+        // Crear usuario - password es requerido
+        if (!formData.password) {
+          setModalAlert({ type: 'error', message: 'La contraseña es requerida' });
+          setLoading(false);
+          return;
+        }
+
+        const response = await api.post('/usuarios', dataToSend);
+
         if (response.data.success) {
           setAlert({ type: 'success', message: '✅ Usuario creado exitosamente' });
           cerrarModal();
           cargarUsuarios();
         } else {
-          setAlert({ type: 'error', message: response.data.error });
+          setModalAlert({ type: 'error', message: response.data.error });
         }
       }
     } catch (error) {
-      setAlert({ 
-        type: 'error', 
-        message: error.response?.data?.error || 'Error al guardar usuario' 
+      setModalAlert({
+        type: 'error',
+        message: error.response?.data?.error || 'Error al guardar usuario'
       });
     }
     setLoading(false);
@@ -430,6 +451,20 @@ function Usuarios() {
               </button>
             </div>
 
+            {/* Alerta dentro del modal */}
+            {modalAlert && (
+              <div className={`mb-4 p-4 rounded-lg ${
+                modalAlert.type === 'error'
+                  ? 'bg-red-100 border border-red-400 text-red-700'
+                  : 'bg-green-100 border border-green-400 text-green-700'
+              }`}>
+                <div className="flex items-center">
+                  <span className="text-xl mr-2">{modalAlert.type === 'error' ? '❌' : '✅'}</span>
+                  <span className="font-medium">{modalAlert.message}</span>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -514,20 +549,28 @@ function Usuarios() {
                 </div>
               </div>
 
-              <div className="flex space-x-3 pt-4">
+              <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
                 <button
                   type="button"
                   onClick={cerrarModal}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                  className="w-full sm:flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors font-bold text-lg shadow-lg"
                 >
-                  {loading ? 'Guardando...' : editingUser ? 'Actualizar' : 'Crear'}
+                  {loading ? (
+                    <span className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Guardando...
+                    </span>
+                  ) : editingUser ? '💾 Actualizar Usuario' : '✅ Crear Usuario'}
                 </button>
               </div>
             </form>

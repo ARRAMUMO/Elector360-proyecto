@@ -9,7 +9,7 @@ const dashboardService = {
    */
   async obtenerEstadisticas() {
     try {
-      const response = await api.get('/estadisticas');
+      const response = await api.get('/estadisticas/dashboard');
 
       if (response.data.success) {
         return {
@@ -87,7 +87,7 @@ const dashboardService = {
    */
   async obtenerPorDepartamento() {
     try {
-      const response = await api.get('/estadisticas/departamentos');
+      const response = await api.get('/estadisticas/por-departamento');
 
       if (response.data.success) {
         return {

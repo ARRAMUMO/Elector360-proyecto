@@ -28,9 +28,10 @@ const consultaService = {
   /**
    * Obtener estado de una consulta RPA
    * @param {string} consultaId - ID de la consulta
+   * @param {number} retryCount - Contador de reintentos interno
    * @returns {Promise}
    */
-  async obtenerEstado(consultaId) {
+  async obtenerEstado(consultaId, retryCount = 0) {
     try {
       const response = await api.get(`/consultas/estado/${consultaId}`);
 
@@ -40,9 +41,18 @@ const consultaService = {
         error: response.data.success ? null : response.data.error
       };
     } catch (error) {
+      // Si es error 429 (rate limit), reintentar con backoff
+      if (error.response?.status === 429 && retryCount < 3) {
+        const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return this.obtenerEstado(consultaId, retryCount + 1);
+      }
+
       return {
         success: false,
-        error: error.response?.data?.error || 'Error al obtener estado'
+        error: error.response?.status === 429
+          ? 'Demasiadas solicitudes. Espera un momento...'
+          : error.response?.data?.error || 'Error al obtener estado'
       };
     }
   },

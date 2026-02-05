@@ -66,4 +66,32 @@ router.get('/logs', workerController.getLogs);
  */
 router.get('/health', workerController.healthCheck);
 
+/**
+ * @route   GET /api/v1/worker/cola
+ * @desc    Obtener consultas en cola con filtros
+ * @access  Admin
+ */
+router.get('/cola', workerController.getCola);
+
+/**
+ * @route   DELETE /api/v1/worker/consulta/:consultaId
+ * @desc    Eliminar consulta de la cola
+ * @access  Admin
+ */
+router.delete('/consulta/:consultaId', workerController.eliminarConsulta);
+
+/**
+ * @route   PATCH /api/v1/worker/consulta/:consultaId/prioridad
+ * @desc    Cambiar prioridad de una consulta
+ * @access  Admin
+ */
+router.patch('/consulta/:consultaId/prioridad', workerController.cambiarPrioridad);
+
+/**
+ * @route   POST /api/v1/worker/retry-all
+ * @desc    Reintentar todas las consultas con error
+ * @access  Admin
+ */
+router.post('/retry-all', workerController.retryAll);
+
 module.exports = router;

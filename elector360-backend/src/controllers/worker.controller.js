@@ -215,9 +215,9 @@ exports.getLogs = async (req, res) => {
 exports.healthCheck = async (req, res) => {
   try {
     const stats = rpaWorker.getStats();
-    
+
     const isHealthy = stats && stats.circuitBreaker.state !== 'OPEN';
-    
+
     res.status(isHealthy ? 200 : 503).json({
       success: isHealthy,
       status: isHealthy ? 'healthy' : 'unhealthy',
@@ -231,6 +231,167 @@ exports.healthCheck = async (req, res) => {
     res.status(503).json({
       success: false,
       status: 'unhealthy',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Obtener consultas en cola con filtros
+ */
+exports.getCola = async (req, res) => {
+  try {
+    const { estado, page = 1, limit = 20 } = req.query;
+
+    const filtro = {};
+    if (estado) {
+      filtro.estado = estado;
+    }
+
+    const [consultas, total] = await Promise.all([
+      ConsultaRPA.find(filtro)
+        .sort({ prioridad: 1, createdAt: 1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit))
+        .populate('usuario', 'email perfil.nombres perfil.apellidos'),
+      ConsultaRPA.countDocuments(filtro)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        consultas,
+        pagination: {
+          total,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error obteniendo cola:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Eliminar consulta de la cola
+ */
+exports.eliminarConsulta = async (req, res) => {
+  try {
+    const { consultaId } = req.params;
+
+    const consulta = await ConsultaRPA.findById(consultaId);
+
+    if (!consulta) {
+      return res.status(404).json({
+        success: false,
+        error: 'Consulta no encontrada'
+      });
+    }
+
+    // Solo permitir eliminar si está EN_COLA o ERROR
+    if (!['EN_COLA', 'ERROR'].includes(consulta.estado)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Solo se pueden eliminar consultas en cola o con error'
+      });
+    }
+
+    await consulta.deleteOne();
+
+    res.json({
+      success: true,
+      message: 'Consulta eliminada de la cola'
+    });
+  } catch (error) {
+    console.error('Error eliminando consulta:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Cambiar prioridad de una consulta
+ */
+exports.cambiarPrioridad = async (req, res) => {
+  try {
+    const { consultaId } = req.params;
+    const { prioridad } = req.body;
+
+    if (![1, 2, 3].includes(prioridad)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Prioridad debe ser 1 (alta), 2 (media) o 3 (baja)'
+      });
+    }
+
+    const consulta = await ConsultaRPA.findById(consultaId);
+
+    if (!consulta) {
+      return res.status(404).json({
+        success: false,
+        error: 'Consulta no encontrada'
+      });
+    }
+
+    if (consulta.estado !== 'EN_COLA') {
+      return res.status(400).json({
+        success: false,
+        error: 'Solo se puede cambiar prioridad de consultas en cola'
+      });
+    }
+
+    consulta.prioridad = prioridad;
+    await consulta.save();
+
+    res.json({
+      success: true,
+      message: 'Prioridad actualizada',
+      data: consulta
+    });
+  } catch (error) {
+    console.error('Error cambiando prioridad:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Reintentar todas las consultas con error
+ */
+exports.retryAll = async (req, res) => {
+  try {
+    const resultado = await ConsultaRPA.updateMany(
+      { estado: 'ERROR' },
+      {
+        $set: {
+          estado: 'EN_COLA',
+          error: null,
+          intentos: 0
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: `${resultado.modifiedCount} consultas reencoladas`,
+      data: {
+        reencoladas: resultado.modifiedCount
+      }
+    });
+  } catch (error) {
+    console.error('Error reintentando todas:', error);
+    res.status(500).json({
+      success: false,
       error: error.message
     });
   }

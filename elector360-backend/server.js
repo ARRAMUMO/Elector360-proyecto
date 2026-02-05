@@ -24,10 +24,27 @@ const PORT = process.env.PORT || 8080;
 // Conectar a MongoDB
 connectDB();
 
-// Rate limiting
+// Rate limiting general (más permisivo)
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutos
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 1000, // Aumentado para polling
+  message: { success: false, error: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' }
+});
+
+// Rate limiter específico para polling de estado (muy permisivo)
+const pollingLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 120, // 120 requests por minuto (permite polling cada 0.5 segundos)
+  message: { success: false, error: 'Demasiadas consultas de estado. Espera un momento.' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Rate limiter para consultas RPA (más restrictivo)
+const rpaLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 20, // 20 consultas RPA por minuto
+  message: { success: false, error: 'Límite de consultas RPA alcanzado. Espera un momento.' }
 });
 
 // Middleware
@@ -39,7 +56,12 @@ app.use(cors({
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/api', limiter);
+
+// Aplicar rate limiters específicos antes del general
+app.use('/api/v1/consultas/estado', pollingLimiter); // Polling de estado - muy permisivo
+app.use('/api/v1/consultas/buscar', rpaLimiter); // Consultas RPA - restrictivo
+app.use('/api/v1/consultas', rpaLimiter); // Crear consultas - restrictivo
+app.use('/api', limiter); // General
 
 // Health check
 app.get('/health', (req, res) => {

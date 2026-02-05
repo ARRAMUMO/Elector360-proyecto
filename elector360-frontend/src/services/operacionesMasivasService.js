@@ -9,7 +9,7 @@ const operacionesMasivasService = {
    */
   async actualizarTodo() {
     try {
-      const response = await api.post('/operaciones-masivas/actualizar-todo');
+      const response = await api.post('/masivas/actualizar-todo');
 
       return {
         success: response.data.success,
@@ -34,7 +34,7 @@ const operacionesMasivasService = {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.post('/operaciones-masivas/consultar-excel', formData, {
+      const response = await api.post('/masivas/consultar-excel', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -63,7 +63,7 @@ const operacionesMasivasService = {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.post('/operaciones-masivas/actualizar-excel', formData, {
+      const response = await api.post('/masivas/actualizar-excel', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -89,7 +89,7 @@ const operacionesMasivasService = {
    */
   async generarReporte(resultados) {
     try {
-      const response = await api.post('/operaciones-masivas/generar-reporte', 
+      const response = await api.post('/masivas/generar-reporte', 
         { resultados },
         { responseType: 'blob' }
       );
@@ -118,7 +118,7 @@ const operacionesMasivasService = {
    */
   async obtenerEstado() {
     try {
-      const response = await api.get('/operaciones-masivas/estado');
+      const response = await api.get('/masivas/estado');
 
       if (response.data.success) {
         return {
@@ -153,7 +153,7 @@ const operacionesMasivasService = {
    */
   async limpiarCola(dias = 7) {
     try {
-      const response = await api.delete(`/operaciones-masivas/limpiar-cola?dias=${dias}`);
+      const response = await api.delete(`/masivas/limpiar-cola?dias=${dias}`);
 
       return {
         success: response.data.success,
@@ -174,7 +174,7 @@ const operacionesMasivasService = {
    */
   async descargarPlantilla() {
     try {
-      const response = await api.get('/operaciones-masivas/plantilla', {
+      const response = await api.get('/masivas/plantilla', {
         responseType: 'blob'
       });
 
