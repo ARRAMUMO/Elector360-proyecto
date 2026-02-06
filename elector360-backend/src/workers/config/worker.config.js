@@ -3,6 +3,7 @@
 module.exports = {
   // Configuración de Puppeteer
   puppeteer: {
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     headless: true, // Cambiar a false para debugging
     args: [
       '--no-sandbox',

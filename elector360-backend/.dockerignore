@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+.git
+*.md
+tests/
+coverage/
+screenshots/
+uploads/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+seed.js

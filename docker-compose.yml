@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./elector360-backend
+      dockerfile: Dockerfile
+    container_name: elector360-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - MONGODB_URI=${MONGODB_URI:-mongodb://host.docker.internal:27017/elector360}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:5173}
+      - CAPTCHA_API_KEY=${CAPTCHA_API_KEY:-}
+      - ENABLE_RPA_WORKER=${ENABLE_RPA_WORKER:-true}
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      - RATE_LIMIT_WINDOW_MS=900000
+      - RATE_LIMIT_MAX_REQUESTS=1000
+    volumes:
+      - ./elector360-backend/uploads:/app/uploads
+      - ./elector360-backend/screenshots:/app/screenshots
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
