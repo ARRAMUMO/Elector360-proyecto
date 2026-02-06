@@ -1,6 +1,8 @@
 // src/pages/Consulta.jsx
 import { useState } from 'react';
 import consultaService from '../services/consultaService';
+import personaService from '../services/personaService';
+import authService from '../services/authService';
 import Alert from '../components/common/Alert';
 
 function Consulta() {
@@ -28,6 +30,14 @@ function Consulta() {
     mesa: ''
   });
   const [guardando, setGuardando] = useState(false);
+
+  // Estados para el modal de edición
+  const [showModalEditar, setShowModalEditar] = useState(false);
+  const [datosEdicion, setDatosEdicion] = useState({
+    nombres: '', apellidos: '', telefono: '', email: '', estadoContacto: '',
+    departamento: '', municipio: '', zona: '', nombrePuesto: '', direccion: '', mesa: '', notas: ''
+  });
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -284,6 +294,11 @@ function Consulta() {
       direccion: '',
       mesa: ''
     });
+    setShowModalEditar(false);
+    setDatosEdicion({
+      nombres: '', apellidos: '', telefono: '', email: '', estadoContacto: '',
+      departamento: '', municipio: '', zona: '', nombrePuesto: '', direccion: '', mesa: '', notas: ''
+    });
   };
 
   // Abrir modal para agregar persona a la base de datos
@@ -378,6 +393,81 @@ function Consulta() {
     }
   };
 
+  // Abrir modal para editar persona
+  const abrirModalEditar = () => {
+    if (!resultado) return;
+    const rawPuesto = resultado.puesto || {};
+
+    setDatosEdicion({
+      nombres: resultado.nombres || '',
+      apellidos: resultado.apellidos || '',
+      telefono: resultado.telefono || '',
+      email: resultado.email || '',
+      estadoContacto: resultado.estadoContacto || 'NO_CONTACTADO',
+      departamento: rawPuesto.departamento || '',
+      municipio: rawPuesto.municipio || '',
+      zona: rawPuesto.zona || '',
+      nombrePuesto: rawPuesto.nombrePuesto || '',
+      direccion: rawPuesto.direccion || '',
+      mesa: rawPuesto.mesa || '',
+      notas: resultado.notas || ''
+    });
+    setShowModalEditar(true);
+  };
+
+  const handleEdicionChange = (e) => {
+    const { name, value } = e.target;
+    setDatosEdicion(prev => ({ ...prev, [name]: value }));
+  };
+
+  const guardarEdicion = async () => {
+    if (!resultado?._id) {
+      setAlert({ type: 'error', message: 'No se puede actualizar: falta el ID de la persona' });
+      return;
+    }
+
+    setGuardandoEdicion(true);
+
+    try {
+      const datosActualizacion = {
+        nombres: datosEdicion.nombres.trim() || undefined,
+        apellidos: datosEdicion.apellidos.trim() || undefined,
+        telefono: datosEdicion.telefono.trim() || undefined,
+        email: datosEdicion.email.trim() || undefined,
+        estadoContacto: datosEdicion.estadoContacto || undefined,
+        notas: datosEdicion.notas.trim() || undefined,
+        puesto: {
+          departamento: datosEdicion.departamento.trim() || undefined,
+          municipio: datosEdicion.municipio.trim() || undefined,
+          zona: datosEdicion.zona.trim() || undefined,
+          nombrePuesto: datosEdicion.nombrePuesto.trim() || undefined,
+          direccion: datosEdicion.direccion.trim() || undefined,
+          mesa: datosEdicion.mesa.trim() || undefined
+        }
+      };
+
+      Object.keys(datosActualizacion.puesto).forEach(key => {
+        if (!datosActualizacion.puesto[key]) delete datosActualizacion.puesto[key];
+      });
+      if (Object.keys(datosActualizacion.puesto).length === 0) delete datosActualizacion.puesto;
+
+      const respuesta = await personaService.actualizar(resultado._id, datosActualizacion);
+
+      if (respuesta.success) {
+        setAlert({ type: 'success', message: '✅ Persona actualizada exitosamente' });
+        setShowModalEditar(false);
+        setResultado(respuesta.persona || { ...resultado, ...datosActualizacion });
+      } else {
+        setAlert({ type: 'error', message: respuesta.error || 'Error al actualizar la persona' });
+      }
+    } catch (error) {
+      console.error('Error al editar persona:', error);
+      setAlert({ type: 'error', message: 'Error al actualizar la persona' });
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
+
   // Función para solicitar actualización de datos electorales via RPA
   const solicitarActualizacion = async () => {
     if (!resultado?.documento) return;
@@ -451,7 +541,7 @@ function Consulta() {
               placeholder="Ej: 1234567890"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               required
-              minLength="7"
+              minLength="5"
               maxLength="15"
               disabled={loading || polling}
             />
@@ -460,7 +550,7 @@ function Consulta() {
           <div className="flex space-x-3">
             <button
               type="submit"
-              disabled={loading || polling || documento.length < 7}
+              disabled={loading || polling || documento.length < 5}
               className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50"
             >
               {loading ? 'Buscando...' : polling ? 'Consultando...' : 'Buscar'}
@@ -719,6 +809,14 @@ function Consulta() {
                                      datosElectorales.direccion ||
                                      datosElectorales.mesa;
 
+        // Determinar ownership y permisos de edición
+        const currentUser = authService.getStoredUser();
+        const tieneLeader = resultado.lider?.id;
+        const liderId = typeof tieneLeader === 'object' ? tieneLeader?.toString() : tieneLeader;
+        const esPersonaMia = liderId && currentUser?._id === liderId;
+        const esAdmin = currentUser?.rol === 'ADMIN';
+        const puedeEditar = resultado._id && resultado.confirmado && (esPersonaMia || esAdmin);
+
         return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
           <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4">
@@ -782,6 +880,32 @@ function Consulta() {
               )}
             </div>
           </div>
+
+          {/* Info de Líder asignado */}
+          {resultado.confirmado && tieneLeader && (
+            <div className={`p-4 border-b ${esPersonaMia ? 'bg-green-50 border-green-100' : 'bg-orange-50 border-orange-100'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center mr-3 ${esPersonaMia ? 'bg-green-500' : 'bg-orange-500'}`}>
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className={`text-sm font-semibold ${esPersonaMia ? 'text-green-800' : 'text-orange-800'}`}>
+                      {esPersonaMia ? 'Asignada a ti' : `Asignada a: ${resultado.lider.nombre || 'Otro líder'}`}
+                    </p>
+                    {!esPersonaMia && resultado.lider.email && (
+                      <p className="text-xs text-orange-600">{resultado.lider.email}</p>
+                    )}
+                  </div>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${esPersonaMia ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}>
+                  {esPersonaMia ? 'Mi Base' : 'Otro Líder'}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Información de Votación - Sección Principal */}
           {hayDatosElectorales && (
@@ -957,14 +1081,31 @@ function Consulta() {
             </div>
           )}
 
-          {/* Mensaje si ya está confirmada */}
+          {/* Mensaje si ya está confirmada + botón editar */}
           {resultado.confirmado && (
-            <div className="p-4 border-t border-green-200 bg-green-50">
-              <div className="flex items-center text-green-800">
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm font-medium">Esta persona ya está en tu base de datos</p>
+            <div className={`p-4 border-t ${esPersonaMia ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <svg className={`w-5 h-5 mr-2 ${esPersonaMia ? 'text-green-600' : 'text-orange-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className={`text-sm font-medium ${esPersonaMia ? 'text-green-800' : 'text-orange-800'}`}>
+                    {esPersonaMia
+                      ? 'Esta persona ya está en tu base de datos'
+                      : `Esta persona pertenece a ${resultado.lider?.nombre || 'otro líder'}`}
+                  </p>
+                </div>
+                {puedeEditar && (
+                  <button
+                    onClick={abrirModalEditar}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Editar Persona
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1224,6 +1365,196 @@ function Consulta() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
                     Guardar Persona
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edición de Persona */}
+      {showModalEditar && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center">
+                    <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Editar Persona
+                  </h3>
+                  <p className="text-blue-100 text-sm mt-1">
+                    {resultado?.nombres && resultado?.apellidos
+                      ? `Editando a ${resultado.nombres} ${resultado.apellidos}`
+                      : `Cédula: ${resultado?.documento}`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowModalEditar(false)}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Contenido */}
+            <div className="p-6 space-y-6">
+              {/* Datos Personales */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Datos Personales
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombres</label>
+                    <input type="text" name="nombres" value={datosEdicion.nombres}
+                      onChange={handleEdicionChange} placeholder="Ej: JUAN CARLOS"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Apellidos</label>
+                    <input type="text" name="apellidos" value={datosEdicion.apellidos}
+                      onChange={handleEdicionChange} placeholder="Ej: PEREZ GOMEZ"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Datos de Contacto */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  Datos de Contacto
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                    <input type="text" name="telefono" value={datosEdicion.telefono}
+                      onChange={handleEdicionChange} placeholder="Ej: 3001234567"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email" value={datosEdicion.email}
+                      onChange={handleEdicionChange} placeholder="correo@ejemplo.com"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Estado de Contacto</label>
+                    <select name="estadoContacto" value={datosEdicion.estadoContacto}
+                      onChange={handleEdicionChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                      <option value="NO_CONTACTADO">No Contactado</option>
+                      <option value="PENDIENTE">Pendiente</option>
+                      <option value="CONTACTADO">Contactado</option>
+                      <option value="CONFIRMADO">Confirmado</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Puesto de Votación */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Puesto de Votación
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Departamento</label>
+                    <input type="text" name="departamento" value={datosEdicion.departamento}
+                      onChange={handleEdicionChange} placeholder="Ej: ATLANTICO"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Municipio</label>
+                    <input type="text" name="municipio" value={datosEdicion.municipio}
+                      onChange={handleEdicionChange} placeholder="Ej: BARRANQUILLA"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Zona</label>
+                    <input type="text" name="zona" value={datosEdicion.zona}
+                      onChange={handleEdicionChange} placeholder="Ej: URBANA"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Puesto</label>
+                    <input type="text" name="nombrePuesto" value={datosEdicion.nombrePuesto}
+                      onChange={handleEdicionChange} placeholder="Ej: IE MARIA EMMA"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                    <input type="text" name="direccion" value={datosEdicion.direccion}
+                      onChange={handleEdicionChange} placeholder="Ej: CRA 12 No 6-61"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mesa</label>
+                    <input type="text" name="mesa" value={datosEdicion.mesa}
+                      onChange={handleEdicionChange} placeholder="Ej: 13"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Notas */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Notas
+                </h4>
+                <textarea name="notas" value={datosEdicion.notas} onChange={handleEdicionChange}
+                  rows="3" placeholder="Notas adicionales sobre esta persona..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl flex justify-end space-x-3">
+              <button
+                onClick={() => setShowModalEditar(false)}
+                disabled={guardandoEdicion}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={guardarEdicion}
+                disabled={guardandoEdicion}
+                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {guardandoEdicion ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Guardando...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    Guardar Cambios
                   </>
                 )}
               </button>

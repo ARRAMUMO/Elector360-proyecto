@@ -6,47 +6,56 @@ const ApiError = require('../utils/ApiError');
 class OperacionesMasivasService {
   /**
    * Actualizar TODA la base de datos
-   * Encola todas las personas para actualización
+   * Encola todas las personas para actualización (batch)
    */
   async actualizarBaseDatosCompleta() {
     // Obtener todas las personas
-    const personas = await Persona.find().select('documento _id estadoRPA');
+    const personas = await Persona.find().select('documento _id').lean();
 
     if (personas.length === 0) {
       throw new ApiError(400, 'No hay personas para actualizar');
     }
 
-    // Estadísticas
+    const todosDocumentos = personas.map(p => p.documento);
+    const docToId = new Map(personas.map(p => [p.documento, p._id]));
+
+    // Batch: verificar cuáles ya están en cola (1 query)
+    const yaEnColaItems = await ColaConsulta.find({
+      documento: { $in: todosDocumentos },
+      estado: { $in: ['PENDIENTE', 'PROCESANDO'] }
+    }).select('documento').lean();
+
+    const docsEnCola = new Set(yaEnColaItems.map(i => i.documento));
+    const yaEnCola = docsEnCola.size;
+
+    // Filtrar las que necesitan encolarse
+    const paraEncolar = todosDocumentos.filter(doc => !docsEnCola.has(doc));
+
     let encoladas = 0;
-    let yaEnCola = 0;
     let errores = 0;
 
-    // Encolar cada persona con prioridad MEDIA (2)
-    for (const persona of personas) {
+    if (paraEncolar.length > 0) {
+      const documentosAInsertar = paraEncolar.map(doc => ({
+        documento: doc,
+        personaId: docToId.get(doc),
+        prioridad: 2, // Media
+        estado: 'PENDIENTE'
+      }));
+
       try {
-        // Verificar si ya está en cola
-        const enCola = await ColaConsulta.findOne({
-          documento: persona.documento,
-          estado: { $in: ['PENDIENTE', 'PROCESANDO'] }
-        });
-
-        if (enCola) {
-          yaEnCola++;
-          continue;
+        // Insertar en lotes de 500 para evitar límites de memoria
+        const BATCH_SIZE = 500;
+        for (let i = 0; i < documentosAInsertar.length; i += BATCH_SIZE) {
+          const batch = documentosAInsertar.slice(i, i + BATCH_SIZE);
+          const result = await ColaConsulta.insertMany(batch, { ordered: false });
+          encoladas += result.length;
         }
-
-        // Encolar
-        await ColaConsulta.create({
-          documento: persona.documento,
-          personaId: persona._id,
-          prioridad: 2, // Media
-          estado: 'PENDIENTE'
-        });
-
-        encoladas++;
       } catch (error) {
-        console.error(`Error encolando ${persona.documento}:`, error);
-        errores++;
+        if (error.insertedDocs) {
+          encoladas += error.insertedDocs.length;
+        }
+        errores = paraEncolar.length - encoladas;
+        console.error('Error parcial en encolamiento masivo:', error.message);
       }
     }
 
@@ -97,12 +106,12 @@ class OperacionesMasivasService {
       // Limpiar y validar cédula
       const cedulaLimpia = cedula.toString().trim().replace(/\D/g, '');
 
-      // Validar formato (7-10 dígitos)
-      if (!/^\d{7,10}$/.test(cedulaLimpia)) {
+      // Validar formato (5-10 dígitos)
+      if (!/^\d{5,10}$/.test(cedulaLimpia)) {
         errores.push({
           fila: rowNumber,
           cedula: cedula.toString(),
-          error: 'Cédula inválida (debe tener 7-10 dígitos)'
+          error: 'Cédula inválida (debe tener 5-10 dígitos)'
         });
         return;
       }
@@ -127,12 +136,16 @@ class OperacionesMasivasService {
   /**
    * Consultar múltiples cédulas desde Excel
    * 1. Lee Excel
-   * 2. Verifica cuáles existen en BD
-   * 3. Encola las que no existen para RPA
+   * 2. Verifica cuáles existen en BD (batch)
+   * 3. Encola las que no existen para RPA (batch)
    */
   async consultarDesdeExcel(filePath) {
     // Leer y validar archivo
     const { cedulas, errores: erroresLectura } = await this.procesarArchivoExcel(filePath);
+
+    // Mapa cedula → fila para referencia rápida
+    const cedulaMap = new Map(cedulas.map(c => [c.cedula, c.fila]));
+    const todasLasCedulas = cedulas.map(c => c.cedula);
 
     const resultados = {
       total: cedulas.length,
@@ -144,65 +157,78 @@ class OperacionesMasivasService {
         encontradas: [],
         encoladas: [],
         yaEnCola: [],
-        errores: erroresLectura
+        errores: [...erroresLectura]
       }
     };
 
-    // Procesar cada cédula
-    for (const item of cedulas) {
-      try {
-        // 1. Buscar en BD
-        const persona = await Persona.findOne({ documento: item.cedula });
+    try {
+      // 1. Batch: buscar todas las personas existentes en BD (1 query)
+      const personasExistentes = await Persona.find({
+        documento: { $in: todasLasCedulas }
+      }).select('documento nombres apellidos lider').lean();
 
-        if (persona) {
-          // Existe en BD
-          resultados.encontradasEnBD++;
-          resultados.detalles.encontradas.push({
-            fila: item.fila,
-            cedula: item.cedula,
-            nombre: `${persona.nombres} ${persona.apellidos}`,
-            lider: persona.lider?.nombre || 'Sin asignar'
-          });
-          continue;
-        }
-
-        // 2. No existe, verificar si ya está en cola
-        const enCola = await ColaConsulta.findOne({
-          documento: item.cedula,
-          estado: { $in: ['PENDIENTE', 'PROCESANDO'] }
+      const docsEnBD = new Set();
+      for (const persona of personasExistentes) {
+        docsEnBD.add(persona.documento);
+        resultados.encontradasEnBD++;
+        resultados.detalles.encontradas.push({
+          fila: cedulaMap.get(persona.documento),
+          cedula: persona.documento,
+          nombre: `${persona.nombres} ${persona.apellidos}`,
+          lider: persona.lider?.nombre || 'Sin asignar'
         });
+      }
 
-        if (enCola) {
+      // 2. Cédulas que no están en BD
+      const cedulasNoEnBD = todasLasCedulas.filter(c => !docsEnBD.has(c));
+
+      if (cedulasNoEnBD.length > 0) {
+        // 3. Batch: verificar cuáles ya están en cola (1 query)
+        const yaEnColaItems = await ColaConsulta.find({
+          documento: { $in: cedulasNoEnBD },
+          estado: { $in: ['PENDIENTE', 'PROCESANDO'] }
+        }).select('documento estado').lean();
+
+        const docsEnCola = new Set();
+        for (const item of yaEnColaItems) {
+          docsEnCola.add(item.documento);
           resultados.yaEnCola++;
           resultados.detalles.yaEnCola.push({
-            fila: item.fila,
-            cedula: item.cedula,
-            estado: enCola.estado
+            fila: cedulaMap.get(item.documento),
+            cedula: item.documento,
+            estado: item.estado
           });
-          continue;
         }
 
-        // 3. No existe ni en BD ni en cola, encolar
-        await ColaConsulta.create({
-          documento: item.cedula,
-          prioridad: 1, // ALTA (consulta manual)
-          estado: 'PENDIENTE'
-        });
+        // 4. Batch: encolar todas las que faltan (1 insertMany)
+        const paraEncolar = cedulasNoEnBD.filter(c => !docsEnCola.has(c));
 
-        resultados.encoladas++;
-        resultados.detalles.encoladas.push({
-          fila: item.fila,
-          cedula: item.cedula
-        });
+        if (paraEncolar.length > 0) {
+          const documentosAInsertar = paraEncolar.map(cedula => ({
+            documento: cedula,
+            prioridad: 1, // ALTA (consulta manual)
+            estado: 'PENDIENTE'
+          }));
 
-      } catch (error) {
-        console.error(`Error procesando cédula ${item.cedula}:`, error);
-        resultados.errores++;
-        resultados.detalles.errores.push({
-          fila: item.fila,
-          cedula: item.cedula,
-          error: error.message
-        });
+          await ColaConsulta.insertMany(documentosAInsertar, { ordered: false });
+
+          for (const cedula of paraEncolar) {
+            resultados.encoladas++;
+            resultados.detalles.encoladas.push({
+              fila: cedulaMap.get(cedula),
+              cedula
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error en consulta masiva batch:', error);
+      // Si insertMany falla parcialmente, contar errores
+      if (error.writeErrors) {
+        resultados.errores += error.writeErrors.length;
+        resultados.encoladas = (resultados.encoladas || 0) - error.writeErrors.length;
+      } else {
+        throw error;
       }
     }
 
@@ -218,13 +244,32 @@ class OperacionesMasivasService {
     await workbook.xlsx.readFile(filePath);
 
     const worksheet = workbook.worksheets[0];
-    
+
     if (!worksheet) {
       throw new ApiError(400, 'El archivo Excel está vacío');
     }
 
+    // 1. Recolectar filas de forma síncrona (eachRow es síncrono)
+    const filas = [];
+    let isFirstRow = true;
+
+    worksheet.eachRow((row, rowNumber) => {
+      if (isFirstRow) {
+        isFirstRow = false;
+        return;
+      }
+
+      const cedula = row.getCell(1).value?.toString().trim();
+      const telefono = row.getCell(2).value?.toString().trim();
+      const email = row.getCell(3).value?.toString().trim();
+      const estadoContacto = row.getCell(4).value?.toString().trim();
+      const notas = row.getCell(5).value?.toString().trim();
+
+      filas.push({ rowNumber, cedula, telefono, email, estadoContacto, notas });
+    });
+
     const resultados = {
-      total: 0,
+      total: filas.length,
       actualizadas: 0,
       noEncontradas: 0,
       errores: 0,
@@ -235,69 +280,73 @@ class OperacionesMasivasService {
       }
     };
 
-    // Leer datos (saltar header)
-    let isFirstRow = true;
+    // Separar filas con y sin cédula
+    const filasValidas = [];
+    for (const fila of filas) {
+      if (!fila.cedula) {
+        resultados.errores++;
+        resultados.detalles.errores.push({ fila: fila.rowNumber, error: 'Cédula vacía' });
+      } else {
+        filasValidas.push(fila);
+      }
+    }
 
-    worksheet.eachRow(async (row, rowNumber) => {
-      if (isFirstRow) {
-        isFirstRow = false;
-        return; // Skip header
+    if (filasValidas.length === 0) return resultados;
+
+    // 2. Batch: buscar todas las personas existentes (1 query)
+    const cedulasBuscar = filasValidas.map(f => f.cedula);
+    const personasExistentes = await Persona.find({
+      documento: { $in: cedulasBuscar }
+    }).select('documento nombres apellidos telefono email estadoContacto notas');
+
+    const personaMap = new Map(personasExistentes.map(p => [p.documento, p]));
+
+    // 3. Procesar actualizaciones
+    const bulkOps = [];
+    for (const fila of filasValidas) {
+      const persona = personaMap.get(fila.cedula);
+
+      if (!persona) {
+        resultados.noEncontradas++;
+        resultados.detalles.noEncontradas.push({ fila: fila.rowNumber, cedula: fila.cedula });
+        continue;
       }
 
-      resultados.total++;
+      const updateFields = {};
+      if (fila.telefono) updateFields.telefono = fila.telefono;
+      if (fila.email) updateFields.email = fila.email;
+      if (fila.estadoContacto) updateFields.estadoContacto = fila.estadoContacto;
+      if (fila.notas) updateFields.notas = fila.notas;
 
-      try {
-        const cedula = row.getCell(1).value?.toString().trim();
-        const telefono = row.getCell(2).value?.toString().trim();
-        const email = row.getCell(3).value?.toString().trim();
-        const estadoContacto = row.getCell(4).value?.toString().trim();
-        const notas = row.getCell(5).value?.toString().trim();
-
-        if (!cedula) {
-          resultados.errores++;
-          resultados.detalles.errores.push({
-            fila: rowNumber,
-            error: 'Cédula vacía'
-          });
-          return;
-        }
-
-        // Buscar persona
-        const persona = await Persona.findOne({ documento: cedula });
-
-        if (!persona) {
-          resultados.noEncontradas++;
-          resultados.detalles.noEncontradas.push({
-            fila: rowNumber,
-            cedula
-          });
-          return;
-        }
-
-        // Actualizar campos
-        if (telefono) persona.telefono = telefono;
-        if (email) persona.email = email;
-        if (estadoContacto) persona.estadoContacto = estadoContacto;
-        if (notas) persona.notas = notas;
-
-        await persona.save();
-
+      if (Object.keys(updateFields).length > 0) {
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: persona._id },
+            update: { $set: updateFields }
+          }
+        });
         resultados.actualizadas++;
         resultados.detalles.actualizadas.push({
-          fila: rowNumber,
-          cedula,
+          fila: fila.rowNumber,
+          cedula: fila.cedula,
           nombre: `${persona.nombres} ${persona.apellidos}`
         });
-
-      } catch (error) {
-        console.error(`Error fila ${rowNumber}:`, error);
-        resultados.errores++;
-        resultados.detalles.errores.push({
-          fila: rowNumber,
-          error: error.message
-        });
       }
-    });
+    }
+
+    // 4. Batch: ejecutar todas las actualizaciones (1 bulkWrite)
+    if (bulkOps.length > 0) {
+      try {
+        await Persona.bulkWrite(bulkOps, { ordered: false });
+      } catch (error) {
+        console.error('Error parcial en actualización masiva:', error.message);
+        if (error.result) {
+          const fallidas = bulkOps.length - (error.result.nModified || 0);
+          resultados.errores += fallidas;
+          resultados.actualizadas -= fallidas;
+        }
+      }
+    }
 
     return resultados;
   }
@@ -400,12 +449,17 @@ class OperacionesMasivasService {
    * Obtener estado de procesamiento masivo
    */
   async obtenerEstadoProcesamientoMasivo() {
-    const [total, pendientes, procesando, completadas, errores] = await Promise.all([
+    const [total, pendientes, procesando, completadas, errores, erroresRecientes] = await Promise.all([
       ColaConsulta.countDocuments(),
       ColaConsulta.countDocuments({ estado: 'PENDIENTE' }),
       ColaConsulta.countDocuments({ estado: 'PROCESANDO' }),
       ColaConsulta.countDocuments({ estado: 'COMPLETADO' }),
-      ColaConsulta.countDocuments({ estado: 'ERROR' })
+      ColaConsulta.countDocuments({ estado: 'ERROR' }),
+      ColaConsulta.find({ estado: 'ERROR' })
+        .sort({ updatedAt: -1 })
+        .limit(10)
+        .select('documento ultimoError updatedAt')
+        .lean()
     ]);
 
     // Calcular progreso
@@ -420,13 +474,139 @@ class OperacionesMasivasService {
       errores,
       procesadas,
       progreso,
-      enProceso: pendientes > 0 || procesando > 0
+      enProceso: pendientes > 0 || procesando > 0,
+      erroresRecientes: erroresRecientes.map(e => ({
+        documento: e.documento,
+        error: e.ultimoError,
+        fecha: e.updatedAt
+      }))
     };
   }
 
   /**
    * Limpiar cola de consultas (solo completadas y errores antiguos)
    */
+  /**
+   * Obtener resultados completados (con datos de votación)
+   */
+  async obtenerResultadosCompletados() {
+    // Obtener consultas completadas y con error
+    const consultas = await ColaConsulta.find({
+      estado: { $in: ['COMPLETADO', 'ERROR'] }
+    })
+    .sort({ updatedAt: -1 })
+    .limit(500)
+    .lean();
+
+    // Para las completadas, también buscar datos de Persona (que ya fueron actualizados por el worker)
+    const documentosCompletados = consultas
+      .filter(c => c.estado === 'COMPLETADO')
+      .map(c => c.documento);
+
+    const personasMap = {};
+    if (documentosCompletados.length > 0) {
+      const personas = await Persona.find({
+        documento: { $in: documentosCompletados }
+      }).select('documento nombres apellidos puesto').lean();
+
+      personas.forEach(p => {
+        personasMap[p.documento] = p;
+      });
+    }
+
+    return consultas.map(c => {
+      const persona = personasMap[c.documento];
+      const resultado = c.resultado || {};
+      const datosElectorales = resultado.datosElectorales || {};
+
+      return {
+        documento: c.documento,
+        estado: c.estado,
+        nombres: resultado.nombres || persona?.nombres || '',
+        apellidos: resultado.apellidos || persona?.apellidos || '',
+        departamento: datosElectorales.departamento || persona?.puesto?.departamento || '',
+        municipio: datosElectorales.municipio || persona?.puesto?.municipio || '',
+        puesto: datosElectorales.puestoVotacion || persona?.puesto?.nombrePuesto || '',
+        direccion: datosElectorales.direccion || persona?.puesto?.direccion || '',
+        mesa: datosElectorales.mesa || persona?.puesto?.mesa || '',
+        error: c.ultimoError || null,
+        fecha: c.updatedAt
+      };
+    });
+  }
+
+  /**
+   * Generar reporte Excel con datos de votación (resultados RPA)
+   */
+  async generarReporteResultadosRPA() {
+    const resultados = await this.obtenerResultadosCompletados();
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Resultados RPA');
+
+    // Configurar columnas
+    worksheet.columns = [
+      { header: 'Cédula', key: 'documento', width: 15 },
+      { header: 'Nombres', key: 'nombres', width: 20 },
+      { header: 'Apellidos', key: 'apellidos', width: 20 },
+      { header: 'Departamento', key: 'departamento', width: 18 },
+      { header: 'Municipio', key: 'municipio', width: 18 },
+      { header: 'Puesto de Votación', key: 'puesto', width: 30 },
+      { header: 'Dirección', key: 'direccion', width: 30 },
+      { header: 'Mesa', key: 'mesa', width: 8 },
+      { header: 'Estado', key: 'estado', width: 15 },
+      { header: 'Error', key: 'error', width: 30 }
+    ];
+
+    // Agregar filas
+    resultados.forEach(r => {
+      worksheet.addRow({
+        documento: r.documento,
+        nombres: r.nombres,
+        apellidos: r.apellidos,
+        departamento: r.departamento,
+        municipio: r.municipio,
+        puesto: r.puesto,
+        direccion: r.direccion,
+        mesa: r.mesa,
+        estado: r.estado,
+        error: r.error || ''
+      });
+    });
+
+    // Estilos header
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4472C4' }
+    };
+
+    // Color por estado en las filas de datos
+    for (let i = 2; i <= resultados.length + 1; i++) {
+      const estado = worksheet.getCell(`I${i}`).value;
+      if (estado === 'ERROR') {
+        worksheet.getCell(`I${i}`).font = { color: { argb: 'FFFF0000' } };
+      } else if (estado === 'COMPLETADO') {
+        worksheet.getCell(`I${i}`).font = { color: { argb: 'FF008000' } };
+      }
+    }
+
+    // Resumen al inicio
+    const completadas = resultados.filter(r => r.estado === 'COMPLETADO').length;
+    const errores = resultados.filter(r => r.estado === 'ERROR').length;
+
+    worksheet.insertRow(1, ['REPORTE DE RESULTADOS RPA']);
+    worksheet.insertRow(2, ['Total:', resultados.length, '', 'Completadas:', completadas, '', 'Errores:', errores]);
+    worksheet.insertRow(3, []);
+
+    worksheet.mergeCells('A1:J1');
+    worksheet.getCell('A1').font = { bold: true, size: 14 };
+    worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+    return workbook;
+  }
+
   async limpiarCola(diasAntiguedad = 7) {
     const fechaLimite = new Date();
     fechaLimite.setDate(fechaLimite.getDate() - diasAntiguedad);

@@ -8,7 +8,7 @@ const personaService = {
    * @param {Object} filtros - { page, limit, search, estadoContacto, departamento }
    * @returns {Promise}
    */
-  async listar(filtros = {}) {
+  async listar(filtros = {}, options = {}) {
     try {
       const params = new URLSearchParams();
 
@@ -22,7 +22,9 @@ const personaService = {
       if (filtros.nombrePuesto) params.append('nombrePuesto', filtros.nombrePuesto);
       if (filtros.zona) params.append('zona', filtros.zona);
 
-      const response = await api.get(`/personas?${params.toString()}`);
+      const response = await api.get(`/personas?${params.toString()}`, {
+        signal: options.signal
+      });
 
       if (response.data.success) {
         return {
@@ -37,6 +39,9 @@ const personaService = {
         error: 'Error al cargar personas'
       };
     } catch (error) {
+      if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+        return { success: false, canceled: true, personas: [], pagination: { total: 0, pages: 0, page: 1, limit: 20 } };
+      }
       console.error('Error en listar personas:', error);
       return {
         success: false,
@@ -198,6 +203,34 @@ const personaService = {
   },
 
   /**
+   * Exportar personas a Excel
+   * @returns {Promise}
+   */
+  async exportarExcel() {
+    try {
+      const response = await api.get('/personas/export/excel', {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `personas-${Date.now()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Error al exportar Excel'
+      };
+    }
+  },
+
+  /**
    * Obtener mesas de votación con estadísticas
    * @param {Object} filtros - { departamento, municipio, nombrePuesto }
    * @returns {Promise}
@@ -238,6 +271,60 @@ const personaService = {
    * @param {Object} datosMesa - { departamento, municipio, nombrePuesto, mesa }
    * @returns {Promise}
    */
+  /**
+   * Importar personas desde archivo Excel con datos completos
+   * @param {File} file - Archivo Excel
+   * @returns {Promise}
+   */
+  async importarDesdeExcel(file) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post('/personas/importar', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al importar personas'
+      };
+    }
+  },
+
+  /**
+   * Descargar plantilla para importar personas
+   * @returns {Promise}
+   */
+  async descargarPlantillaImportacion() {
+    try {
+      const response = await api.get('/personas/plantilla-importacion', {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'plantilla_importar_personas.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Error al descargar plantilla'
+      };
+    }
+  },
+
   async obtenerPersonasPorMesa(datosMesa) {
     try {
       const params = new URLSearchParams();

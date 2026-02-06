@@ -33,6 +33,17 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Si es error 429 (rate limit), reintentar con backoff exponencial
+    if (error.response?.status === 429) {
+      const retryCount = originalRequest._retryCount || 0;
+      if (retryCount < 3) {
+        originalRequest._retryCount = retryCount + 1;
+        const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        return api(originalRequest);
+      }
+    }
+
     // Si el token expiró, intentar refrescar
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;

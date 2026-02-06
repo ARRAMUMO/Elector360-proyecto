@@ -15,8 +15,8 @@ exports.consultarPersona = asyncHandler(async (req, res) => {
   }
 
   // Validar formato
-  if (!/^\d{7,10}$/.test(documento)) {
-    throw new ApiError(400, 'Documento debe tener entre 7 y 10 dígitos');
+  if (!/^\d{5,10}$/.test(documento)) {
+    throw new ApiError(400, 'Documento debe tener entre 5 y 10 dígitos');
   }
 
   const resultado = await consultaService.consultarPorDocumento(

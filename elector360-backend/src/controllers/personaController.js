@@ -1,6 +1,9 @@
 const asyncHandler = require('../utils/asyncHandler');
 const personaService = require('../services/personaService');
 const Persona = require('../models/Persona');
+const ApiError = require('../utils/ApiError');
+const path = require('path');
+const fs = require('fs').promises;
 
 /**
  * @desc    Listar personas
@@ -196,4 +199,83 @@ exports.exportarCSV = asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=personas.csv');
   res.send(csv);
+});
+
+/**
+ * @desc    Exportar personas a Excel
+ * @route   GET /api/v1/personas/export/excel
+ * @access  Private
+ */
+exports.exportarExcel = asyncHandler(async (req, res) => {
+  const filtros = {};
+
+  if (req.user.rol === 'LIDER') {
+    filtros.liderId = req.user._id;
+  }
+
+  const workbook = await personaService.exportarExcel(filtros);
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=personas-${Date.now()}.xlsx`
+  );
+
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
+/**
+ * @desc    Importar personas desde Excel con datos completos
+ * @route   POST /api/v1/personas/importar
+ * @access  Private (Admin only)
+ */
+exports.importarDesdeExcel = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    throw new ApiError(400, 'No se ha subido ningún archivo');
+  }
+
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  if (!['.xlsx', '.xls'].includes(ext)) {
+    await fs.unlink(req.file.path);
+    throw new ApiError(400, 'El archivo debe ser Excel (.xlsx o .xls)');
+  }
+
+  try {
+    const resultado = await personaService.importarDesdeExcel(req.file.path, req.user);
+    await fs.unlink(req.file.path);
+
+    res.json({
+      success: true,
+      message: `Importación completada: ${resultado.creadas} creadas, ${resultado.actualizadas} actualizadas`,
+      data: resultado
+    });
+  } catch (error) {
+    await fs.unlink(req.file.path).catch(() => {});
+    throw error;
+  }
+});
+
+/**
+ * @desc    Descargar plantilla para importar personas
+ * @route   GET /api/v1/personas/plantilla-importacion
+ * @access  Private (Admin only)
+ */
+exports.descargarPlantillaImportacion = asyncHandler(async (req, res) => {
+  const workbook = await personaService.generarPlantillaImportacion();
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename=plantilla_importar_personas.xlsx'
+  );
+
+  await workbook.xlsx.write(res);
+  res.end();
 });

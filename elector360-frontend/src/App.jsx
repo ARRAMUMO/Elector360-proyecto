@@ -53,24 +53,23 @@ function App() {
               </ProtectedRoute>
             } 
           />
-          <Route 
-            path="usuarios" 
+          <Route
+            path="usuarios"
             element={
               <ProtectedRoute requiredRole="ADMIN">
                 <Usuarios />
               </ProtectedRoute>
-            } 
+            }
+          />
+          <Route
+            path="worker-monitor"
+            element={
+              <ProtectedRoute requiredRole="ADMIN">
+                <WorkerMonitor />
+              </ProtectedRoute>
+            }
           />
         </Route>
-
-        // Agregar en las rutas (dentro del AppLayout, solo para Admin)
-            <Route 
-              path="worker-monitor" 
-              element={
-                <ProtectedRoute requiredRole="ADMIN">
-                  <WorkerMonitor />
-                </ProtectedRoute>
-              } Route/>
 
         {/* Ruta 404 */}
         <Route

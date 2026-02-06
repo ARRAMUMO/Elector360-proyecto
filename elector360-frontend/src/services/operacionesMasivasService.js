@@ -169,6 +169,54 @@ const operacionesMasivasService = {
   },
 
   /**
+   * Obtener resultados completados con datos de votación
+   * @returns {Promise}
+   */
+  async obtenerResultados() {
+    try {
+      const response = await api.get('/masivas/resultados');
+
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al obtener resultados'
+      };
+    }
+  },
+
+  /**
+   * Descargar reporte Excel con datos de votación
+   * @returns {Promise}
+   */
+  async descargarReporteResultados() {
+    try {
+      const response = await api.get('/masivas/reporte-resultados', {
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `reporte-resultados-${Date.now()}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: 'Error al descargar reporte de resultados'
+      };
+    }
+  },
+
+  /**
    * Descargar plantilla Excel
    * @returns {Promise}
    */
@@ -238,7 +286,7 @@ const operacionesMasivasService = {
           clearInterval(interval);
           reject(error);
         }
-      }, 10000); // Cada 10 segundos
+      }, 3000); // Cada 3 segundos
     });
   }
 };

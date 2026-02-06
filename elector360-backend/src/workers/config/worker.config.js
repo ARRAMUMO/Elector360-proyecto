@@ -43,7 +43,7 @@ module.exports = {
   pool: {
     minWorkers: 1,
     maxWorkers: 5,
-    maxConcurrent: 3
+    maxConcurrent: 5
   },
 
   // Circuit Breaker

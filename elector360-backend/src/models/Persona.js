@@ -7,7 +7,7 @@ const personaSchema = new mongoose.Schema({
     required: [true, 'La cédula es requerida'],
     unique: true,
     trim: true,
-    match: [/^\d{7,10}$/, 'Cédula debe tener entre 7 y 10 dígitos']
+    match: [/^\d{5,10}$/, 'Cédula debe tener entre 5 y 10 dígitos']
   },
   nombres: {
     type: String,

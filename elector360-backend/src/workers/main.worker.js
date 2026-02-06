@@ -3,6 +3,7 @@
 const mongoose = require('mongoose');
 const WorkerPool = require('./pool/worker-pool');
 const ConsultaRPA = require('../models/consultaRPA.model');
+const ColaConsulta = require('../models/ColaConsulta');
 const Persona = require('../models/Persona');
 const config = require('./config/worker.config');
 
@@ -98,111 +99,229 @@ class RPAWorker {
 
   /**
    * Poll de consultas pendientes
+   * Prioridad: ConsultaRPA (individuales) > ColaConsulta (masivas)
+   * Solo toma lo que el pool puede manejar realmente
    */
   async poll() {
     if (!this.isRunning) return;
-    
+
     try {
-      // Buscar consultas EN_COLA
-      const consultas = await ConsultaRPA.find({
+      const maxConcurrent = config.pool?.maxConcurrent || 5;
+
+      // Calcular slots REALMENTE disponibles en el pool
+      const activeJobs = this.pool.activeJobs || 0;
+      const queuedJobs = this.pool.queue?.length || 0;
+      const slotsReales = Math.max(0, maxConcurrent - activeJobs - queuedJobs);
+
+      if (slotsReales === 0) {
+        // Pool lleno, no tomar más trabajo
+        this.pollTimer = setTimeout(() => this.poll(), this.pollInterval);
+        return;
+      }
+
+      let procesadas = 0;
+
+      // 1. Primero: ConsultaRPA (consultas individuales con mayor prioridad)
+      const consultasRPA = await ConsultaRPA.find({
         estado: 'EN_COLA'
       })
       .sort({ prioridad: -1, createdAt: 1 })
-      .limit(10);
-      
-      if (consultas.length > 0) {
-        console.log(`📋 ${consultas.length} consultas pendientes en cola`);
-        
-        // Procesar cada consulta
-        for (const consulta of consultas) {
-          // Marcar como PROCESANDO
-          consulta.estado = 'PROCESANDO';
-          consulta.intentos = (consulta.intentos || 0) + 1;
-          await consulta.save();
-          
-          // Agregar al pool (no await para procesar en paralelo)
+      .limit(slotsReales);
+
+      if (consultasRPA.length > 0) {
+        console.log(`📋 ${consultasRPA.length} consultas individuales en ConsultaRPA`);
+
+        const idsRPA = consultasRPA.map(c => c._id);
+        await ConsultaRPA.updateMany(
+          { _id: { $in: idsRPA } },
+          { $set: { estado: 'PROCESANDO' }, $inc: { intentos: 1 } }
+        );
+
+        for (const consulta of consultasRPA) {
           this.pool.processJob({
             consultaId: consulta._id,
-            documento: consulta.documento
+            documento: consulta.documento,
+            source: 'ConsultaRPA'
           }).catch(error => {
-            console.error(`Error procesando consulta ${consulta._id}:`, error);
+            console.error(`Error procesando ConsultaRPA ${consulta._id}:`, error);
           });
+          procesadas++;
         }
       }
-      
+
+      // 2. Si hay espacio, procesar ColaConsulta (operaciones masivas)
+      const slotsDisponibles = slotsReales - procesadas;
+      if (slotsDisponibles > 0) {
+        const consultasCola = await ColaConsulta.find({
+          estado: 'PENDIENTE'
+        })
+        .sort({ prioridad: -1, createdAt: 1 })
+        .limit(slotsDisponibles);
+
+        if (consultasCola.length > 0) {
+          console.log(`📋 ${consultasCola.length} consultas masivas en ColaConsulta`);
+
+          const idsCola = consultasCola.map(c => c._id);
+          await ColaConsulta.updateMany(
+            { _id: { $in: idsCola } },
+            { $set: { estado: 'PROCESANDO' }, $inc: { intentos: 1 } }
+          );
+
+          for (const consulta of consultasCola) {
+            this.pool.processJob({
+              consultaId: consulta._id,
+              documento: consulta.documento,
+              source: 'ColaConsulta'
+            }).catch(error => {
+              console.error(`Error procesando ColaConsulta ${consulta._id}:`, error);
+            });
+            procesadas++;
+          }
+        }
+      }
+
+      if (procesadas > 0) {
+        console.log(`🔄 ${procesadas} consultas enviadas al pool (${activeJobs} activas, ${slotsReales} slots)`);
+      }
+
     } catch (error) {
       console.error('❌ Error en poll:', error);
     }
-    
+
     // Programar siguiente poll
     this.pollTimer = setTimeout(() => this.poll(), this.pollInterval);
   }
 
   /**
    * Manejar job completado
+   * Soporta tanto ConsultaRPA como ColaConsulta
    */
   async handleJobCompleted(job, result, duration) {
     try {
-      const consulta = await ConsultaRPA.findById(job.consultaId);
-      if (!consulta) return;
-      
+      const source = job.source || 'ConsultaRPA';
+      const Model = source === 'ColaConsulta' ? ColaConsulta : ConsultaRPA;
+
+      const consulta = await Model.findById(job.consultaId);
+      if (!consulta) {
+        console.warn(`⚠️ Consulta ${job.consultaId} no encontrada en ${source}`);
+        return;
+      }
+
       if (result.success) {
         // Guardar o actualizar persona
-        const persona = await this.guardarPersona(result.datos, consulta.usuario);
-        
-        // Actualizar consulta
+        const persona = await this.guardarPersona(result.datos, consulta.usuario || consulta.personaId);
+
+        // Actualizar consulta según el modelo
         consulta.estado = 'COMPLETADO';
-        consulta.datosPersona = result.datos;
-        consulta.persona = persona._id;
-        consulta.completadoEn = new Date();
         consulta.tiempoEjecucion = duration;
-        consulta.costo = 0.003; // Costo estimado por consulta
+
+        if (source === 'ConsultaRPA') {
+          consulta.datosPersona = result.datos;
+          consulta.persona = persona._id;
+          consulta.completadoEn = new Date();
+          consulta.costo = 0.003;
+        } else {
+          // ColaConsulta
+          consulta.resultado = result.datos;
+          consulta.fechaProcesamiento = new Date();
+        }
+
         await consulta.save();
-        
-        console.log(`✅ Consulta ${job.consultaId} completada en ${duration}ms`);
-        
+        console.log(`✅ [${source}] Consulta ${job.consultaId} completada en ${duration}ms`);
+
       } else {
         // Marcar como error
         consulta.estado = 'ERROR';
-        consulta.error = result.error;
-        consulta.completadoEn = new Date();
         consulta.tiempoEjecucion = duration;
+
+        if (source === 'ConsultaRPA') {
+          consulta.error = result.error;
+          consulta.completadoEn = new Date();
+        } else {
+          consulta.ultimoError = result.error;
+          consulta.fechaProcesamiento = new Date();
+        }
+
         await consulta.save();
-        
-        console.log(`❌ Consulta ${job.consultaId} falló: ${result.error}`);
+        console.log(`❌ [${source}] Consulta ${job.consultaId} falló: ${result.error}`);
       }
-      
+
     } catch (error) {
       console.error('Error guardando resultado:', error);
     }
   }
 
   /**
+   * Determinar si un error es permanente (no tiene sentido reintentar)
+   */
+  isErrorPermanente(errorMsg) {
+    const erroresPermanentes = [
+      'no encontrado',
+      'no existe',
+      'no censado',
+      'no aparece',
+      'censo electoral'
+    ];
+    const msgLower = (errorMsg || '').toLowerCase();
+    return erroresPermanentes.some(e => msgLower.includes(e));
+  }
+
+  /**
    * Manejar job fallido
+   * Soporta tanto ConsultaRPA como ColaConsulta
    */
   async handleJobFailed(job, error, duration) {
     try {
-      const consulta = await ConsultaRPA.findById(job.consultaId);
-      if (!consulta) return;
-      
-      // Si supera el máximo de intentos, marcar como ERROR
-      if (consulta.intentos >= config.retries.maxAttempts) {
-        consulta.estado = 'ERROR';
-        consulta.error = `Máximo de intentos alcanzado: ${error.message}`;
-        consulta.completadoEn = new Date();
-      } else {
-        // Volver a EN_COLA para reintentar
-        consulta.estado = 'EN_COLA';
-        consulta.error = error.message;
+      const source = job.source || 'ConsultaRPA';
+      const Model = source === 'ColaConsulta' ? ColaConsulta : ConsultaRPA;
+      const maxAttempts = config.retries?.maxAttempts || 3;
+
+      const consulta = await Model.findById(job.consultaId);
+      if (!consulta) {
+        console.warn(`⚠️ Consulta ${job.consultaId} no encontrada en ${source}`);
+        return;
       }
-      
+
+      const errorMsg = error.message || String(error);
+      const esPermanente = this.isErrorPermanente(errorMsg);
+
+      // Error permanente (ej: no censado) o máximo de intentos → marcar como ERROR final
+      const maxIntentosConsulta = consulta.maximoIntentos || maxAttempts;
+      if (esPermanente || consulta.intentos >= maxIntentosConsulta) {
+        consulta.estado = 'ERROR';
+        consulta.tiempoEjecucion = duration;
+
+        const razon = esPermanente ? errorMsg : `Máximo de intentos alcanzado: ${errorMsg}`;
+
+        if (source === 'ConsultaRPA') {
+          consulta.error = razon;
+          consulta.completadoEn = new Date();
+        } else {
+          consulta.ultimoError = razon;
+          consulta.fechaProcesamiento = new Date();
+        }
+
+        if (esPermanente) {
+          console.log(`⛔ [${source}] ${job.consultaId} - Error permanente: ${errorMsg}`);
+        }
+      } else {
+        // Volver a cola para reintentar
+        consulta.estado = source === 'ColaConsulta' ? 'PENDIENTE' : 'EN_COLA';
+
+        if (source === 'ConsultaRPA') {
+          consulta.error = errorMsg;
+        } else {
+          consulta.ultimoError = errorMsg;
+        }
+      }
+
       consulta.tiempoEjecucion = duration;
       await consulta.save();
-      
-      console.log(`⚠️ Consulta ${job.consultaId} falló (intento ${consulta.intentos}/${config.retries.maxAttempts})`);
-      
-    } catch (error) {
-      console.error('Error manejando job fallido:', error);
+
+      console.log(`⚠️ [${source}] Consulta ${job.consultaId} falló (intento ${consulta.intentos}/${maxIntentosConsulta})`);
+
+    } catch (err) {
+      console.error('Error manejando job fallido:', err);
     }
   }
 

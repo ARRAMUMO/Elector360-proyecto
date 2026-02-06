@@ -3,8 +3,8 @@ const { validate } = require('./validate');
 
 exports.validatePersona = [
   body('documento')
-    .matches(/^\d{7,10}$/)
-    .withMessage('La cédula debe tener entre 7 y 10 dígitos'),
+    .matches(/^\d{5,10}$/)
+    .withMessage('La cédula debe tener entre 5 y 10 dígitos'),
 
   body('nombres')
     .optional()

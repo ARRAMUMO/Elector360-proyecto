@@ -32,6 +32,12 @@ router.post('/generar-reporte', operacionesMasivasController.generarReporte);
 // Obtener estado de procesamiento
 router.get('/estado', operacionesMasivasController.obtenerEstado);
 
+// Obtener resultados completados con datos de votación
+router.get('/resultados', operacionesMasivasController.obtenerResultados);
+
+// Descargar reporte Excel con datos de votación
+router.get('/reporte-resultados', operacionesMasivasController.descargarReporteResultados);
+
 // Limpiar cola antigua
 router.delete('/limpiar-cola', operacionesMasivasController.limpiarCola);
 

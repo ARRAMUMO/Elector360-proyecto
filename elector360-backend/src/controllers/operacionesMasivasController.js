@@ -139,6 +139,41 @@ exports.obtenerEstado = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Obtener resultados completados con datos de votación
+ * @route   GET /api/v1/masivas/resultados
+ * @access  Private (Admin only)
+ */
+exports.obtenerResultados = asyncHandler(async (req, res) => {
+  const resultados = await operacionesMasivasService.obtenerResultadosCompletados();
+
+  res.json({
+    success: true,
+    data: resultados
+  });
+});
+
+/**
+ * @desc    Descargar reporte Excel con datos de votación
+ * @route   GET /api/v1/masivas/reporte-resultados
+ * @access  Private (Admin only)
+ */
+exports.descargarReporteResultados = asyncHandler(async (req, res) => {
+  const workbook = await operacionesMasivasService.generarReporteResultadosRPA();
+
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  );
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=reporte_resultados_${Date.now()}.xlsx`
+  );
+
+  await workbook.xlsx.write(res);
+  res.end();
+});
+
+/**
  * @desc    Limpiar cola de consultas antiguas
  * @route   DELETE /api/v1/masivas/limpiar-cola
  * @access  Private (Admin only)
