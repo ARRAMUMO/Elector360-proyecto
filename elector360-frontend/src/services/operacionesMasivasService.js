@@ -217,6 +217,88 @@ const operacionesMasivasService = {
   },
 
   /**
+   * Reintentar una consulta específica con error
+   * @param {string} id - ID de la consulta
+   * @returns {Promise}
+   */
+  async reintentarConsulta(id) {
+    try {
+      const response = await api.put(`/masivas/errores/${id}/reintentar`);
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al reintentar consulta'
+      };
+    }
+  },
+
+  /**
+   * Eliminar una consulta específica con error
+   * @param {string} id - ID de la consulta
+   * @returns {Promise}
+   */
+  async eliminarConsulta(id) {
+    try {
+      const response = await api.delete(`/masivas/errores/${id}`);
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al eliminar consulta'
+      };
+    }
+  },
+
+  /**
+   * Reintentar todas las consultas con error
+   * @returns {Promise}
+   */
+  async reintentarTodosErrores() {
+    try {
+      const response = await api.put('/masivas/errores/reintentar-todos');
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al reintentar consultas'
+      };
+    }
+  },
+
+  /**
+   * Eliminar todas las consultas con error
+   * @returns {Promise}
+   */
+  async eliminarTodosErrores() {
+    try {
+      const response = await api.delete('/masivas/errores/todos');
+      return {
+        success: response.data.success,
+        data: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al eliminar errores'
+      };
+    }
+  },
+
+  /**
    * Descargar plantilla Excel
    * @returns {Promise}
    */

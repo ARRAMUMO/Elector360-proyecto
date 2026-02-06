@@ -38,6 +38,12 @@ router.get('/resultados', operacionesMasivasController.obtenerResultados);
 // Descargar reporte Excel con datos de votación
 router.get('/reporte-resultados', operacionesMasivasController.descargarReporteResultados);
 
+// Gestión de errores (bulk primero, luego por ID)
+router.put('/errores/reintentar-todos', operacionesMasivasController.reintentarTodosErrores);
+router.delete('/errores/todos', operacionesMasivasController.eliminarTodosErrores);
+router.put('/errores/:id/reintentar', operacionesMasivasController.reintentarConsulta);
+router.delete('/errores/:id', operacionesMasivasController.eliminarConsulta);
+
 // Limpiar cola antigua
 router.delete('/limpiar-cola', operacionesMasivasController.limpiarCola);
 

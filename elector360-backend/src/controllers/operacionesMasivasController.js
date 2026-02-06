@@ -174,6 +174,62 @@ exports.descargarReporteResultados = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Reintentar una consulta específica con error
+ * @route   PUT /api/v1/masivas/errores/:id/reintentar
+ * @access  Private (Admin only)
+ */
+exports.reintentarConsulta = asyncHandler(async (req, res) => {
+  const resultado = await operacionesMasivasService.reintentarConsulta(req.params.id);
+
+  res.json({
+    success: true,
+    data: resultado
+  });
+});
+
+/**
+ * @desc    Eliminar una consulta específica con error
+ * @route   DELETE /api/v1/masivas/errores/:id
+ * @access  Private (Admin only)
+ */
+exports.eliminarConsulta = asyncHandler(async (req, res) => {
+  const resultado = await operacionesMasivasService.eliminarConsulta(req.params.id);
+
+  res.json({
+    success: true,
+    data: resultado
+  });
+});
+
+/**
+ * @desc    Reintentar todas las consultas con error
+ * @route   PUT /api/v1/masivas/errores/reintentar-todos
+ * @access  Private (Admin only)
+ */
+exports.reintentarTodosErrores = asyncHandler(async (req, res) => {
+  const resultado = await operacionesMasivasService.reintentarTodosErrores();
+
+  res.json({
+    success: true,
+    data: resultado
+  });
+});
+
+/**
+ * @desc    Eliminar todas las consultas con error
+ * @route   DELETE /api/v1/masivas/errores/todos
+ * @access  Private (Admin only)
+ */
+exports.eliminarTodosErrores = asyncHandler(async (req, res) => {
+  const resultado = await operacionesMasivasService.eliminarTodosErrores();
+
+  res.json({
+    success: true,
+    data: resultado
+  });
+});
+
+/**
  * @desc    Limpiar cola de consultas antiguas
  * @route   DELETE /api/v1/masivas/limpiar-cola
  * @access  Private (Admin only)

@@ -457,8 +457,8 @@ class OperacionesMasivasService {
       ColaConsulta.countDocuments({ estado: 'ERROR' }),
       ColaConsulta.find({ estado: 'ERROR' })
         .sort({ updatedAt: -1 })
-        .limit(10)
-        .select('documento ultimoError updatedAt')
+        .limit(50)
+        .select('documento ultimoError intentos maximoIntentos updatedAt')
         .lean()
     ]);
 
@@ -476,8 +476,11 @@ class OperacionesMasivasService {
       progreso,
       enProceso: pendientes > 0 || procesando > 0,
       erroresRecientes: erroresRecientes.map(e => ({
+        _id: e._id,
         documento: e.documento,
         error: e.ultimoError,
+        intentos: e.intentos || 0,
+        maximoIntentos: e.maximoIntentos || 3,
         fecha: e.updatedAt
       }))
     };
@@ -490,16 +493,25 @@ class OperacionesMasivasService {
    * Obtener resultados completados (con datos de votación)
    */
   async obtenerResultadosCompletados() {
-    // Obtener consultas completadas y con error
+    // Obtener consultas completadas y con error (más recientes primero)
     const consultas = await ColaConsulta.find({
       estado: { $in: ['COMPLETADO', 'ERROR'] }
     })
     .sort({ updatedAt: -1 })
-    .limit(500)
     .lean();
 
-    // Para las completadas, también buscar datos de Persona (que ya fueron actualizados por el worker)
-    const documentosCompletados = consultas
+    // Deduplicar por documento: solo la más reciente de cada cédula
+    const vistos = new Set();
+    const consultasUnicas = [];
+    for (const c of consultas) {
+      if (!vistos.has(c.documento)) {
+        vistos.add(c.documento);
+        consultasUnicas.push(c);
+      }
+    }
+
+    // Para las completadas, también buscar datos de Persona
+    const documentosCompletados = consultasUnicas
       .filter(c => c.estado === 'COMPLETADO')
       .map(c => c.documento);
 
@@ -514,7 +526,7 @@ class OperacionesMasivasService {
       });
     }
 
-    return consultas.map(c => {
+    return consultasUnicas.map(c => {
       const persona = personasMap[c.documento];
       const resultado = c.resultado || {};
       const datosElectorales = resultado.datosElectorales || {};
@@ -605,6 +617,69 @@ class OperacionesMasivasService {
     worksheet.getCell('A1').alignment = { horizontal: 'center' };
 
     return workbook;
+  }
+
+  /**
+   * Reintentar una consulta específica con error
+   */
+  async reintentarConsulta(id) {
+    const consulta = await ColaConsulta.findById(id);
+    if (!consulta) {
+      throw new ApiError(404, 'Consulta no encontrada');
+    }
+    if (consulta.estado !== 'ERROR') {
+      throw new ApiError(400, 'Solo se pueden reintentar consultas con error');
+    }
+
+    consulta.estado = 'PENDIENTE';
+    consulta.intentos = 0;
+    consulta.ultimoError = null;
+    await consulta.save();
+
+    return { mensaje: `Consulta ${consulta.documento} reencolada` };
+  }
+
+  /**
+   * Eliminar una consulta específica con error
+   */
+  async eliminarConsulta(id) {
+    const consulta = await ColaConsulta.findById(id);
+    if (!consulta) {
+      throw new ApiError(404, 'Consulta no encontrada');
+    }
+    if (consulta.estado !== 'ERROR') {
+      throw new ApiError(400, 'Solo se pueden eliminar consultas con error');
+    }
+
+    await ColaConsulta.findByIdAndDelete(id);
+    return { mensaje: `Consulta ${consulta.documento} eliminada` };
+  }
+
+  /**
+   * Reintentar todas las consultas con error
+   */
+  async reintentarTodosErrores() {
+    const resultado = await ColaConsulta.updateMany(
+      { estado: 'ERROR' },
+      { $set: { estado: 'PENDIENTE', intentos: 0, ultimoError: null } }
+    );
+
+    return {
+      reintentadas: resultado.modifiedCount,
+      mensaje: `${resultado.modifiedCount} consultas reencoladas`
+    };
+  }
+
+  /**
+   * Eliminar todas las consultas con error
+   */
+  async eliminarTodosErrores() {
+    const resultado = await ColaConsulta.deleteMany({ estado: 'ERROR' });
+
+    return {
+      eliminadas: resultado.deletedCount,
+      mensaje: `${resultado.deletedCount} errores eliminados`
+    };
   }
 
   async limpiarCola(diasAntiguedad = 7) {

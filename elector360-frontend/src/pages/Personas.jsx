@@ -628,6 +628,9 @@ function Personas() {
                       Estado
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      RPA
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Lider
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
@@ -675,6 +678,21 @@ function Personas() {
                           <StatusDropdown personaId={persona._id} estadoActual={persona.estadoContacto} />
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {(() => {
+                          const rpa = persona.estadoRPA;
+                          const cfg = {
+                            ACTUALIZADO: { label: 'Actualizado', cls: 'bg-green-100 text-green-700' },
+                            ERROR_CONSULTA: { label: 'Error', cls: 'bg-red-100 text-red-700' },
+                            CONSULTANDO: { label: 'Consultando', cls: 'bg-blue-100 text-blue-700' },
+                            PENDIENTE_CONSULTA: { label: 'Pendiente', cls: 'bg-yellow-100 text-yellow-700' },
+                            PENDIENTE_ACTUALIZACION: { label: 'Pend. Act.', cls: 'bg-orange-100 text-orange-700' },
+                            NUEVO: { label: 'Sin consultar', cls: 'bg-gray-100 text-gray-600' }
+                          };
+                          const { label, cls } = cfg[rpa] || cfg.NUEVO;
+                          return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${cls}`}>{label}</span>;
+                        })()}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {persona.lider?.nombre || persona.lider?.perfil?.nombres || 'N/A'}
                       </td>
@@ -704,8 +722,8 @@ function Personas() {
                       </h3>
                       <p className="text-sm text-gray-500 mt-0.5">CC {persona.documento || 'N/A'}</p>
                     </div>
-                    {/* Status badge clickeable */}
-                    <div className="relative flex-shrink-0">
+                    {/* Status badges */}
+                    <div className="relative flex-shrink-0 flex flex-col items-end gap-1">
                       <button
                         onClick={() => { setStatusDropdownId(statusDropdownId === persona._id ? null : persona._id); setMenuAbierto(null); }}
                         className={`px-2.5 py-1 text-xs font-semibold rounded-full transition-opacity hover:opacity-80 ${getEstadoBadge(persona.estadoContacto)}`}
@@ -715,6 +733,19 @@ function Personas() {
                       {statusDropdownId === persona._id && (
                         <StatusDropdown personaId={persona._id} estadoActual={persona.estadoContacto} />
                       )}
+                      {(() => {
+                        const rpa = persona.estadoRPA;
+                        const cfg = {
+                          ACTUALIZADO: { label: 'RPA OK', cls: 'bg-green-100 text-green-700' },
+                          ERROR_CONSULTA: { label: 'RPA Error', cls: 'bg-red-100 text-red-700' },
+                          CONSULTANDO: { label: 'Consultando', cls: 'bg-blue-100 text-blue-700' },
+                          PENDIENTE_CONSULTA: { label: 'RPA Pend.', cls: 'bg-yellow-100 text-yellow-700' },
+                          PENDIENTE_ACTUALIZACION: { label: 'Pend. Act.', cls: 'bg-orange-100 text-orange-700' },
+                          NUEVO: null
+                        };
+                        const c = cfg[rpa];
+                        return c ? <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${c.cls}`}>{c.label}</span> : null;
+                      })()}
                     </div>
                   </div>
 

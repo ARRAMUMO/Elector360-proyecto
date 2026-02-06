@@ -5,6 +5,25 @@ import operacionesMasivasService from '../services/operacionesMasivasService';
 import Alert from '../components/common/Alert';
 import Spinner from '../components/common/Spinner';
 
+// Mapear errores técnicos a mensajes entendibles
+const formatearError = (error) => {
+  if (!error) return 'Error desconocido';
+  const e = error.toLowerCase();
+  if (e.includes('detached frame') || e.includes('target closed') || e.includes('session closed'))
+    return 'Error de navegador';
+  if (e.includes('no encontrado') || e.includes('no censado') || e.includes('no existe') || e.includes('no aparece'))
+    return 'No encontrado en censo electoral';
+  if (e.includes('captcha') || e.includes('2captcha'))
+    return 'Error de captcha';
+  if (e.includes('timeout') || e.includes('navigation'))
+    return 'Tiempo de espera agotado';
+  if (e.includes('máximo de intentos'))
+    return 'Máximo de intentos alcanzado';
+  if (e.includes('net::') || e.includes('econnrefused') || e.includes('enotfound'))
+    return 'Error de conexión';
+  return error.length > 60 ? error.substring(0, 60) + '...' : error;
+};
+
 function OperacionesMasivas() {
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -248,10 +267,54 @@ function OperacionesMasivas() {
 
     const resultado = await operacionesMasivasService.limpiarCola();
     if (resultado.success) {
-      setAlert({ 
-        type: 'success', 
-        message: `✅ Cola limpiada: ${resultado.data.eliminadas || 0} consultas eliminadas` 
+      setAlert({
+        type: 'success',
+        message: `Cola limpiada: ${resultado.data.eliminadas || 0} consultas eliminadas`
       });
+      cargarEstado();
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+  };
+
+  // Gestión de errores individuales
+  const handleReintentarConsulta = async (id) => {
+    const resultado = await operacionesMasivasService.reintentarConsulta(id);
+    if (resultado.success) {
+      setAlert({ type: 'success', message: 'Consulta reencolada para reintentar' });
+      cargarEstado();
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+  };
+
+  const handleEliminarConsulta = async (id) => {
+    const resultado = await operacionesMasivasService.eliminarConsulta(id);
+    if (resultado.success) {
+      cargarEstado();
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+  };
+
+  const handleReintentarTodos = async () => {
+    if (!confirm(`¿Reintentar las ${estado?.errores || 0} consultas con error?`)) return;
+
+    const resultado = await operacionesMasivasService.reintentarTodosErrores();
+    if (resultado.success) {
+      setAlert({ type: 'success', message: `${resultado.data.reintentadas} consultas reencoladas` });
+      cargarEstado();
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+  };
+
+  const handleEliminarTodos = async () => {
+    if (!confirm(`¿Eliminar todas las ${estado?.errores || 0} consultas con error? Esta acción no se puede deshacer.`)) return;
+
+    const resultado = await operacionesMasivasService.eliminarTodosErrores();
+    if (resultado.success) {
+      setAlert({ type: 'success', message: `${resultado.data.eliminadas} errores eliminados` });
       cargarEstado();
     } else {
       setAlert({ type: 'error', message: resultado.error });
@@ -710,17 +773,54 @@ function OperacionesMasivas() {
                     </div>
                   </div>
 
-                  {/* Errores recientes */}
+                  {/* Errores recientes con gestión */}
                   {estado.erroresRecientes?.length > 0 && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                      <h4 className="font-bold text-red-900 mb-3 text-sm">
-                        Errores recientes ({estado.errores})
-                      </h4>
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {estado.erroresRecientes.map((err, i) => (
-                          <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 text-sm border border-red-100">
-                            <span className="font-mono text-gray-700">{err.documento}</span>
-                            <span className="text-red-600 text-xs truncate ml-3 max-w-[60%] text-right">{err.error}</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-bold text-red-900 text-sm">
+                          Errores ({estado.errores})
+                        </h4>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleReintentarTodos}
+                            className="text-xs px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                          >
+                            Reintentar Todos
+                          </button>
+                          <button
+                            onClick={handleEliminarTodos}
+                            className="text-xs px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                          >
+                            Eliminar Todos
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {estado.erroresRecientes.map((err) => (
+                          <div key={err._id || err.documento} className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 text-sm border border-red-100">
+                            <span className="font-mono text-gray-700 shrink-0">{err.documento}</span>
+                            <span className="text-red-600 text-xs truncate flex-1" title={err.error}>
+                              {formatearError(err.error)}
+                            </span>
+                            <span className="text-gray-400 text-xs shrink-0">
+                              {err.intentos}/{err.maximoIntentos}
+                            </span>
+                            <button
+                              onClick={() => handleReintentarConsulta(err._id)}
+                              className="shrink-0 p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Reintentar"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleEliminarConsulta(err._id)}
+                              className="shrink-0 p-1 text-red-600 hover:bg-red-50 rounded transition-colors" title="Eliminar"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
                         ))}
                       </div>

@@ -1,21 +1,83 @@
-MIT License
+LICENCIA DE SOFTWARE PROPIETARIO
 
-Copyright (c) 2026 ARRAMUMO
+Copyright (c) 2026 Arcenis Munoz. Todos los derechos reservados.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+TERMINOS Y CONDICIONES
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. DEFINICIONES
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+   "Software" se refiere al sistema Elector360, incluyendo todo el codigo fuente,
+   archivos de configuracion, documentacion, bases de datos, interfaces graficas,
+   y cualquier otro material contenido en este repositorio.
+
+   "Titular" se refiere a Arcenis Munoz, propietario y creador del Software.
+
+   "Usuario" se refiere a cualquier persona o entidad que acceda o utilice el Software.
+
+2. CONCESION DE LICENCIA
+
+   El Titular concede una licencia limitada, no exclusiva, no transferible y
+   revocable para usar el Software unicamente bajo los terminos expresamente
+   autorizados por el Titular.
+
+3. RESTRICCIONES
+
+   Sin autorizacion previa y por escrito del Titular, queda prohibido:
+
+   a) Copiar, reproducir o duplicar el Software, total o parcialmente.
+   b) Modificar, adaptar, traducir o crear obras derivadas del Software.
+   c) Distribuir, sublicenciar, vender, alquilar o prestar el Software a terceros.
+   d) Descompilar, desensamblar o realizar ingenieria inversa del Software.
+   e) Eliminar o alterar avisos de propiedad intelectual del Software.
+   f) Usar el Software con fines distintos a los expresamente autorizados.
+   g) Compartir credenciales de acceso o permitir acceso no autorizado.
+
+4. PROPIEDAD INTELECTUAL
+
+   El Software y todos los derechos de propiedad intelectual asociados son y
+   seguiran siendo propiedad exclusiva del Titular. Ningun derecho de propiedad
+   sobre el Software se transfiere al Usuario mediante esta licencia.
+
+5. CONFIDENCIALIDAD
+
+   El Usuario se compromete a mantener la confidencialidad del Software, su
+   codigo fuente, arquitectura, algoritmos, y cualquier informacion tecnica
+   o comercial a la que tenga acceso durante el uso del mismo.
+
+6. DATOS PERSONALES
+
+   El uso del Software implica el tratamiento de datos personales de terceros.
+   El Usuario es responsable de cumplir con la Ley 1581 de 2012 (Ley de
+   Proteccion de Datos Personales de Colombia) y sus decretos reglamentarios.
+   Ver POLITICA_DATOS.md para mas informacion.
+
+7. EXCLUSION DE GARANTIAS
+
+   EL SOFTWARE SE PROPORCIONA "TAL CUAL" SIN GARANTIAS DE NINGUN TIPO,
+   EXPRESAS O IMPLICITAS, INCLUYENDO PERO NO LIMITADO A GARANTIAS DE
+   COMERCIABILIDAD, IDONEIDAD PARA UN PROPOSITO PARTICULAR O NO INFRACCION.
+
+8. LIMITACION DE RESPONSABILIDAD
+
+   EN NINGUN CASO EL TITULAR SERA RESPONSABLE POR DANOS DIRECTOS, INDIRECTOS,
+   INCIDENTALES, ESPECIALES, CONSECUENCIALES O PUNITIVOS QUE SURJAN DEL USO
+   O LA IMPOSIBILIDAD DE USO DEL SOFTWARE.
+
+9. TERMINACION
+
+   Esta licencia se termina automaticamente si el Usuario incumple cualquiera
+   de sus terminos. Ante la terminacion, el Usuario debe cesar todo uso del
+   Software y destruir todas las copias en su posesion.
+
+10. LEY APLICABLE
+
+    Esta licencia se rige por las leyes de la Republica de Colombia. Cualquier
+    disputa sera resuelta por los tribunales competentes de la ciudad de
+    Barranquilla, Atlantico, Colombia.
+
+11. CONTACTO
+
+    Para solicitudes de autorizacion o consultas sobre esta licencia:
+    Arcenis Munoz - arramumo@gmail.com
+
+Fecha de vigencia: Febrero 2026
