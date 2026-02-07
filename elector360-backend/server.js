@@ -21,6 +21,11 @@ const workerRoutes = require('./src/routes/worker.routes');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Trust proxy (necesario detrás de Nginx/reverse proxy para rate limiting)
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Conectar a MongoDB
 connectDB();
 
