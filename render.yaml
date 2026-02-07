@@ -1,8 +1,8 @@
 services:
   # ---- Backend API (Docker con Puppeteer) ----
   - type: web
-    name: elector360-api
     runtime: docker
+    name: elector360-api
     dockerfilePath: ./elector360-backend/Dockerfile
     dockerContext: ./elector360-backend
     plan: standard
@@ -39,8 +39,8 @@ services:
 
   # ---- Frontend Static Site (gratis) ----
   - type: web
-    name: elector360-frontend
     runtime: static
+    name: elector360-frontend
     buildCommand: cd elector360-frontend && npm ci && npm run build
     staticPublishPath: ./elector360-frontend/dist
     headers:
