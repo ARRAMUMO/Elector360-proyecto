@@ -1,14 +1,14 @@
 services:
-  # ---- Backend API (Docker con Puppeteer) ----
+  # ---- Backend API (Node.js, sin RPA Worker) ----
   - type: web
-    runtime: docker
+    runtime: node
     name: elector360-api
-    dockerfilePath: ./elector360-backend/Dockerfile
-    dockerContext: ./elector360-backend
-    plan: standard
+    rootDir: ./elector360-backend
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    plan: free
     region: oregon
     healthCheckPath: /health
-    numInstances: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -24,11 +24,9 @@ services:
         value: "7d"
       - key: CORS_ORIGIN
         sync: false
-      - key: PUPPETEER_EXECUTABLE_PATH
-        value: /usr/bin/chromium
-      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
-        value: "true"
       - key: ENABLE_RPA_WORKER
+        value: "false"
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
         value: "true"
       - key: CAPTCHA_API_KEY
         sync: false
