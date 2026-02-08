@@ -325,10 +325,10 @@ function OperacionesMasivas() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-          📤 Operaciones Masivas
+        <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-700 bg-clip-text text-transparent">
+          Operaciones Masivas
         </h1>
-        <p className="text-gray-600 mt-1">
+        <p className="text-gray-500 mt-1">
           Gestión masiva de datos con archivos Excel
         </p>
       </div>
@@ -343,8 +343,8 @@ function OperacionesMasivas() {
       )}
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="border-b border-gray-200">
+      <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden">
+        <div className="border-b border-emerald-100">
           <nav className="flex -mb-px overflow-x-auto">
             <button
               onClick={() => setActiveTab('consultar')}
@@ -755,19 +755,19 @@ function OperacionesMasivas() {
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6 text-center">
                       <p className="text-sm text-gray-600 mb-1">Pendientes</p>
                       <p className="text-3xl font-bold text-gray-900">{estado.pendientes || 0}</p>
                     </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6 text-center">
                       <p className="text-sm text-blue-600 mb-1">Procesando</p>
                       <p className="text-3xl font-bold text-blue-900">{estado.procesando || 0}</p>
                     </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6 text-center">
                       <p className="text-sm text-green-600 mb-1">Completadas</p>
                       <p className="text-3xl font-bold text-green-900">{estado.completadas || 0}</p>
                     </div>
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-center">
+                    <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6 text-center">
                       <p className="text-sm text-red-600 mb-1">Errores</p>
                       <p className="text-3xl font-bold text-red-900">{estado.errores || 0}</p>
                     </div>
@@ -855,7 +855,7 @@ function OperacionesMasivas() {
                       {resultadosRPA && resultadosRPA.length > 0 && (
                         <div className="overflow-x-auto rounded-lg border border-gray-200">
                           <table className="min-w-full text-sm">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-gradient-to-r from-emerald-50 to-teal-50">
                               <tr>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Cédula</th>
                                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Nombres</th>
@@ -923,12 +923,12 @@ function OperacionesMasivas() {
       </div>
 
       {/* Ayuda */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
-        <h3 className="font-bold text-blue-900 mb-3 flex items-center">
+      <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-6">
+        <h3 className="font-bold text-emerald-900 mb-3 flex items-center">
           <span className="mr-2">ℹ️</span>
-          Información Importante
+          Informacion Importante
         </h3>
-        <ul className="space-y-2 text-sm text-blue-800">
+        <ul className="space-y-2 text-sm text-emerald-800">
           <li className="flex items-start">
             <span className="mr-2">•</span>
             <span>Los archivos Excel deben contener una columna "documento" con los números de cédula</span>

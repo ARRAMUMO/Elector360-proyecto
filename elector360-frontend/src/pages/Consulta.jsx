@@ -522,15 +522,15 @@ function Consulta() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">🔍 Consultar Persona</h1>
-        <p className="text-gray-600 mt-1">Busca una persona por número de cédula</p>
+        <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-700 bg-clip-text text-transparent">Consultar Persona</h1>
+        <p className="text-gray-500 mt-1">Busca una persona por numero de cedula</p>
       </div>
 
       {alert && (
         <Alert type={alert.type} message={alert.message} onClose={() => setAlert(null)} />
       )}
 
-      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+      <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm p-6 border border-emerald-100">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Número de Cédula</label>
@@ -572,10 +572,10 @@ function Consulta() {
       {/* Panel de Estado de Búsqueda */}
       {estadoBusqueda && (
         <div className={`rounded-xl p-5 border ${
-          estadoBusqueda.tipo === 'buscando' ? 'bg-gray-50 border-gray-200' :
+          estadoBusqueda.tipo === 'buscando' ? 'bg-emerald-50/50 border-emerald-200' :
           estadoBusqueda.tipo === 'encontrada_bd' ? 'bg-green-50 border-green-200' :
           estadoBusqueda.tipo === 'completada_rpa' ? 'bg-green-50 border-green-200' :
-          estadoBusqueda.tipo === 'consultando_rpa' ? 'bg-blue-50 border-blue-200' :
+          estadoBusqueda.tipo === 'consultando_rpa' ? 'bg-teal-50 border-teal-200' :
           estadoBusqueda.tipo === 'actualizando_rpa' ? 'bg-indigo-50 border-indigo-200' :
           estadoBusqueda.tipo === 'no_encontrada' ? 'bg-yellow-50 border-yellow-200' :
           'bg-red-50 border-red-200'
@@ -655,7 +655,7 @@ function Consulta() {
 
           {/* Info adicional */}
           {(estadoBusqueda.tiempoEjecucion || estadoBusqueda.consultaId) && (
-            <div className="mt-3 pt-3 border-t border-gray-200 flex gap-4 text-sm">
+            <div className="mt-3 pt-3 border-t border-emerald-100 flex gap-4 text-sm">
               {estadoBusqueda.consultaId && (
                 <span className="text-gray-500">
                   ID: <span className="font-mono">{estadoBusqueda.consultaId.slice(-8)}</span>
@@ -683,7 +683,7 @@ function Consulta() {
         <div className={`rounded-xl p-6 border ${
           consultaRPA?.estado === 'COMPLETADO' ? 'bg-green-50 border-green-200' :
           consultaRPA?.estado === 'ERROR' ? 'bg-red-50 border-red-200' :
-          'bg-blue-50 border-blue-200'
+          'bg-teal-50 border-teal-200'
         }`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
@@ -818,7 +818,7 @@ function Consulta() {
         const puedeEditar = resultado._id && resultado.confirmado && (esPersonaMia || esAdmin);
 
         return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
+        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden animate-fade-in">
           <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -845,28 +845,28 @@ function Consulta() {
               Datos Personales
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="bg-emerald-50/50 p-3 rounded-lg">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Nombres</p>
                 <p className="font-semibold text-gray-900 mt-1">{resultado.nombres || 'N/A'}</p>
               </div>
-              <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="bg-emerald-50/50 p-3 rounded-lg">
                 <p className="text-xs text-gray-500 uppercase tracking-wide">Apellidos</p>
                 <p className="font-semibold text-gray-900 mt-1">{resultado.apellidos || 'N/A'}</p>
               </div>
               {resultado.email && (
-                <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="bg-emerald-50/50 p-3 rounded-lg">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Email</p>
                   <p className="font-semibold text-gray-900 mt-1">{resultado.email}</p>
                 </div>
               )}
               {resultado.telefono && (
-                <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="bg-emerald-50/50 p-3 rounded-lg">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Teléfono</p>
                   <p className="font-semibold text-gray-900 mt-1">{resultado.telefono}</p>
                 </div>
               )}
               {resultado.estadoContacto && (
-                <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="bg-emerald-50/50 p-3 rounded-lg">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Estado de Contacto</p>
                   <span className={`inline-flex px-2 py-1 mt-1 text-xs font-semibold rounded-full ${
                     resultado.estadoContacto === 'CONFIRMADO' ? 'bg-green-100 text-green-800' :
@@ -1062,7 +1062,7 @@ function Consulta() {
 
           {/* Botón para agregar a mi base (solo si no está confirmada) */}
           {!resultado.confirmado && resultado._id && (
-            <div className="p-6 border-t border-gray-200 bg-gray-50">
+            <div className="p-6 border-t border-emerald-100 bg-emerald-50/30">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-gray-700">¿Deseas agregar esta persona a tu base de datos?</p>
@@ -1338,7 +1338,7 @@ function Consulta() {
             </div>
 
             {/* Footer del Modal */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl flex justify-end space-x-3">
+            <div className="px-6 py-4 bg-emerald-50/30 border-t border-emerald-100 rounded-b-2xl flex justify-end space-x-3">
               <button
                 onClick={() => setShowModalConfirmar(false)}
                 disabled={guardando}
@@ -1528,7 +1528,7 @@ function Consulta() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 rounded-b-2xl flex justify-end space-x-3">
+            <div className="px-6 py-4 bg-emerald-50/30 border-t border-emerald-100 rounded-b-2xl flex justify-end space-x-3">
               <button
                 onClick={() => setShowModalEditar(false)}
                 disabled={guardandoEdicion}

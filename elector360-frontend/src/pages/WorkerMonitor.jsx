@@ -192,10 +192,10 @@ function WorkerMonitor() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            🤖 Monitor RPA Worker
+          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-700 bg-clip-text text-transparent">
+            Monitor RPA Worker
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-500 mt-1">
             Monitoreo y gestión de la cola de consultas
           </p>
         </div>
@@ -213,7 +213,7 @@ function WorkerMonitor() {
 
           <button
             onClick={cargarDatos}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all font-medium shadow-sm"
           >
             🔄 Actualizar
           </button>
@@ -230,37 +230,37 @@ function WorkerMonitor() {
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-emerald-100">
         <nav className="flex space-x-8">
           <button
             onClick={() => setActiveTab('stats')}
             className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'stats'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-emerald-500 text-emerald-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📊 Estadísticas
+            Estadisticas
           </button>
           <button
             onClick={() => setActiveTab('cola')}
             className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'cola'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-emerald-500 text-emerald-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📋 Cola ({colaPagination.total})
+            Cola ({colaPagination.total})
           </button>
           <button
             onClick={() => setActiveTab('logs')}
             className={`py-4 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'logs'
-                ? 'border-blue-500 text-blue-600'
+                ? 'border-emerald-500 text-emerald-700'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            📜 Logs Recientes
+            Logs Recientes
           </button>
         </nav>
       </div>
@@ -286,23 +286,23 @@ function WorkerMonitor() {
 
               {/* Estadísticas Principales */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                   <p className="text-sm text-gray-600 mb-1">Total Procesadas</p>
                   <p className="text-3xl font-bold text-gray-900">{stats.worker.totalProcessed}</p>
                   <p className="text-xs text-green-600 mt-1">Éxito: {stats.worker.successRate}</p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                   <p className="text-sm text-gray-600 mb-1">En Cola</p>
                   <p className="text-3xl font-bold text-yellow-600">{stats.cola.EN_COLA || 0}</p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                   <p className="text-sm text-gray-600 mb-1">Con Error</p>
                   <p className="text-3xl font-bold text-red-600">{stats.cola.ERROR || 0}</p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                   <p className="text-sm text-gray-600 mb-1">Tiempo Promedio</p>
                   <p className="text-3xl font-bold text-purple-600">
                     {(stats.worker.averageTime / 1000).toFixed(1)}s
@@ -311,7 +311,7 @@ function WorkerMonitor() {
               </div>
 
               {/* Controles */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4">Controles del Worker</h3>
                 <div className="flex flex-wrap gap-3">
                   <button
@@ -368,30 +368,30 @@ function WorkerMonitor() {
               </div>
 
               {/* Tabla de Cola */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gradient-to-r from-emerald-50 to-teal-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Documento
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Estado
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Prioridad
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Intentos
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Usuario
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                           Fecha
                         </th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-4 py-3 text-right text-xs font-semibold text-emerald-800 uppercase">
                           Acciones
                         </th>
                       </tr>
@@ -407,7 +407,7 @@ function WorkerMonitor() {
                         cola.map((consulta) => {
                           const prioridadInfo = getPrioridadBadge(consulta.prioridad);
                           return (
-                            <tr key={consulta._id} className="hover:bg-gray-50">
+                            <tr key={consulta._id} className="hover:bg-emerald-50/50">
                               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 {consulta.documento}
                               </td>
@@ -475,38 +475,38 @@ function WorkerMonitor() {
 
           {/* Tab: Logs */}
           {activeTab === 'logs' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-bold text-gray-900">📜 Logs Recientes</h3>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gradient-to-r from-emerald-50 to-teal-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                         Documento
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                         Estado
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                         Intentos
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                         Tiempo
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">
                         Fecha
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                      <th className="px-6 py-3 text-right text-xs font-semibold text-emerald-800 uppercase">
                         Acciones
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {logs.map((log) => (
-                      <tr key={log._id} className="hover:bg-gray-50">
+                      <tr key={log._id} className="hover:bg-emerald-50/50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {log.documento}
                         </td>

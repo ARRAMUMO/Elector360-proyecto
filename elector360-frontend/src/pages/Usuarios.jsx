@@ -196,10 +196,10 @@ function Usuarios() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-            ⚙️ Usuarios
+          <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-700 bg-clip-text text-transparent">
+            Usuarios
           </h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-gray-500 mt-1">
             Gestiona los usuarios del sistema
           </p>
         </div>
@@ -223,7 +223,7 @@ function Usuarios() {
 
       {/* Lista de Usuarios */}
       {usuarios.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm p-12 text-center border border-gray-200">
+        <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm p-12 text-center border border-emerald-100">
           <span className="text-6xl mb-4 block">👥</span>
           <h3 className="text-xl font-bold text-gray-900 mb-2">
             No hay usuarios
@@ -242,34 +242,34 @@ function Usuarios() {
       ) : (
         <>
           {/* Vista Desktop - Tabla */}
-          <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="hidden lg:block bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+                <thead className="bg-gradient-to-r from-emerald-50 to-teal-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Usuario
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Email
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Rol
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Estado
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Estadísticas
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Acciones
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {usuarios.map((usuario) => (
-                    <tr key={usuario._id} className="hover:bg-gray-50">
+                    <tr key={usuario._id} className="hover:bg-emerald-50/50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center mr-3">
@@ -356,7 +356,7 @@ function Usuarios() {
           {/* Vista Mobile - Cards */}
           <div className="lg:hidden space-y-4">
             {usuarios.map((usuario) => (
-              <div key={usuario._id} className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+              <div key={usuario._id} className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm p-6 border border-emerald-100">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center flex-1">
                     <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mr-3">
@@ -553,7 +553,7 @@ function Usuarios() {
                 <button
                   type="button"
                   onClick={cerrarModal}
-                  className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                  className="w-full sm:w-auto px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-emerald-50/50 transition-colors font-medium"
                 >
                   Cancelar
                 </button>
