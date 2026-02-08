@@ -9,7 +9,7 @@ import Spinner from '../components/common/Spinner';
 function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('admin@elector360.com');
-  const [password, setPassword] = useState('password123');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 

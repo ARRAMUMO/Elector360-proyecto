@@ -482,10 +482,10 @@ function Personas() {
         <div className="mt-4 sm:mt-0 flex flex-wrap gap-2">
           <button
             onClick={abrirModal}
-            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium text-sm"
+            className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-green-600 text-white rounded-lg hover:from-emerald-600 hover:via-teal-600 hover:to-green-700 transition-all font-semibold text-sm shadow-lg shadow-emerald-200 hover:shadow-xl hover:shadow-emerald-300 hover:scale-[1.02] active:scale-[0.98]"
           >
-            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-            Nueva
+            <svg className="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+            Nueva Persona
           </button>
           <button
             onClick={handleExportarExcel}

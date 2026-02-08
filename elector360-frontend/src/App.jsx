@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Consulta from './pages/Consulta';
 import Personas from './pages/Personas';
+import Mesas from './pages/Mesas';
 import Perfil from './pages/Perfil';
 import Usuarios from './pages/Usuarios';
 import OperacionesMasivas from './pages/OperacionesMasivas';
@@ -42,6 +43,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="consulta" element={<Consulta />} />
           <Route path="personas" element={<Personas />} />
+          <Route path="mesas" element={<Mesas />} />
           <Route path="perfil" element={<Perfil />} />
           
           {/* Rutas solo para Admin */}
