@@ -9,7 +9,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=${NODE_ENV:-production}
       - PORT=8080
       - MONGODB_URI=${MONGODB_URI:-mongodb://host.docker.internal:27017/elector360}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}

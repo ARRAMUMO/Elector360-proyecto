@@ -36,13 +36,15 @@ class CaptchaService {
    */
   async submitCaptcha(siteKey, pageUrl) {
     const url = `${this.baseUrl}/in.php`;
-    
+
     const params = {
       key: this.apiKey,
       method: 'userrecaptcha',
       googlekey: siteKey,
       pageurl: pageUrl,
-      json: 1
+      json: 1,
+      // Soft ID para mejor prioridad (opcional)
+      soft_id: 0
     };
 
     const response = await axios.get(url, { params });

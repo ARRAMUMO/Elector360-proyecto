@@ -16,19 +16,51 @@ class RegistraduriaScrap {
   }
 
   /**
-   * Inicializar navegador
+   * Inicializar navegador con anti-detección
    */
   async init() {
     try {
       this.browser = await puppeteer.launch(config.puppeteer);
       this.page = await this.browser.newPage();
 
-      // Configurar timeout
       this.page.setDefaultTimeout(config.puppeteer.timeout);
 
-      // NO bloquear recursos - el captcha los necesita para funcionar correctamente
+      // Anti-detección: eliminar señales de automation
+      await this.page.evaluateOnNewDocument(() => {
+        // Ocultar webdriver
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
 
-      console.log('✅ Navegador inicializado');
+        // Chrome runtime real
+        window.chrome = {
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: { isInstalled: false }
+        };
+
+        // Plugins reales (Chrome normal tiene al menos 3)
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin' }
+          ]
+        });
+
+        // Idiomas reales
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['es-CO', 'es', 'en-US', 'en']
+        });
+
+        // Permissions normales (no automation)
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) =>
+          parameters.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(parameters);
+      });
+
+      console.log('✅ Navegador inicializado (anti-detección activa)');
     } catch (error) {
       console.error('❌ Error inicializando navegador:', error);
       throw error;
@@ -153,18 +185,15 @@ class RegistraduriaScrap {
    */
   async resolverCaptcha(isBatch = false) {
     try {
-      // 1. Buscar el sitekey del reCAPTCHA (nueva página usa iframe)
+      // 1. Buscar el sitekey del reCAPTCHA
       const siteKey = await this.page.evaluate(() => {
-        // Intentar múltiples métodos para encontrar el sitekey
         let key = null;
 
-        // Método 1: Buscar en elemento con data-sitekey
         const element = document.querySelector('[data-sitekey]');
         if (element) {
           key = element.getAttribute('data-sitekey');
         }
 
-        // Método 2: Buscar en iframes de reCAPTCHA
         if (!key) {
           const iframes = document.querySelectorAll('iframe');
           for (const iframe of iframes) {
@@ -187,101 +216,17 @@ class RegistraduriaScrap {
 
       console.log(`🔐 Resolviendo captcha con siteKey: ${siteKey}`);
 
-      // 2. Resolver con el servicio apropiado (auto-selecciona según isBatch)
+      // 2. Resolver con el servicio apropiado
       const pageUrl = this.page.url();
       const solution = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
 
-      // Si solution es null, significa modo manual
+      // Si solution es null, significa modo manual (solo en desarrollo)
       if (solution === null) {
-        console.log('👆 MODO MANUAL: Resuelve el captcha manualmente en el navegador');
-        console.log('⏳ Esperando...');
-
-        // Esperar hasta que el botón se habilite (captcha resuelto manualmente)
-        await this.page.waitForFunction(
-          () => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
-            return submitButton && !submitButton.disabled;
-          },
-          { timeout: 300000 } // 5 minutos
-        );
-
-        console.log('✅ Captcha resuelto manualmente');
-        return true;
+        return await this._esperarCaptchaManual();
       }
 
-      // 3. Inyectar solución automática usando método avanzado
-      const injectionResult = await this.page.evaluate((token) => {
-        try {
-          // Paso 1: Inyectar en textareas
-          document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {
-            el.innerHTML = token;
-            el.value = token;
-          });
-
-          const responseEl = document.getElementById('g-recaptcha-response');
-          if (responseEl) {
-            responseEl.innerHTML = token;
-            responseEl.value = token;
-          }
-
-          // Paso 2: Encontrar el widget y su callback
-          let callbackExecuted = false;
-          if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
-            const clients = window.___grecaptcha_cfg.clients;
-
-            Object.keys(clients).forEach(clientId => {
-              const client = clients[clientId];
-              if (!client) return;
-
-              // Buscar todos los widgets del cliente
-              Object.keys(client).forEach(key => {
-                if (isNaN(key)) return;
-
-                const widget = client[key];
-                if (!widget) return;
-
-                // Inyectar token en el widget
-                if (widget.textarea) {
-                  widget.textarea.value = token;
-                }
-
-                // Ejecutar callback del widget
-                const callback = widget.callback;
-                if (callback && typeof callback === 'function') {
-                  try {
-                    callback(token);
-                    callbackExecuted = true;
-                  } catch (e) {
-                    console.error('Error en callback:', e);
-                  }
-                }
-
-                // Ejecutar callback por nombre si existe
-                if (widget.callback && typeof widget.callback === 'string') {
-                  try {
-                    if (window[widget.callback]) {
-                      window[widget.callback](token);
-                      callbackExecuted = true;
-                    }
-                  } catch (e) {
-                    console.error('Error en callback por nombre:', e);
-                  }
-                }
-              });
-            });
-          }
-
-          // Paso 3: Override de grecaptcha.getResponse
-          if (typeof grecaptcha !== 'undefined') {
-            grecaptcha.getResponse = function() { return token; };
-          }
-
-          return { success: true, callbackExecuted };
-        } catch (error) {
-          return { success: false, error: error.message };
-        }
-      }, solution);
+      // 3. Inyectar solución automática
+      const injectionResult = await this._inyectarTokenCaptcha(solution);
 
       console.log('📝 Resultado de inyección:', JSON.stringify(injectionResult));
 
@@ -289,39 +234,23 @@ class RegistraduriaScrap {
       await helpers.randomDelay(3000, 5000);
 
       // Verificar si el captcha realmente se marcó
-      const captchaMarked = await this.page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
-        return submitButton ? !submitButton.disabled : false;
-      });
+      const captchaMarked = await this._verificarCaptchaResuelto();
 
       if (captchaMarked) {
         console.log('✅ Captcha resuelto y verificado');
         return true;
       }
 
-      // Si no se marcó, hacer fallback a modo manual
-      if (!injectionResult.callbackExecuted) {
-        console.log('🔄 Fallback a modo manual...');
-        console.log('👆 Resuelve el captcha manualmente en el navegador');
+      // Si no se marcó y estamos en desarrollo, fallback manual
+      if (!injectionResult.callbackExecuted && !config.isProduction) {
+        console.log('🔄 Fallback a modo manual (desarrollo)...');
+        return await this._esperarCaptchaManual(120000);
+      }
 
-        // Esperar hasta que el botón se habilite (captcha resuelto manualmente)
-        try {
-          await this.page.waitForFunction(
-            () => {
-              const buttons = Array.from(document.querySelectorAll('button'));
-              const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
-              return submitButton && !submitButton.disabled;
-            },
-            { timeout: 120000 } // 2 minutos para resolución manual
-          );
-
-          console.log('✅ Captcha resuelto manualmente');
-          return true;
-        } catch (waitError) {
-          console.log('❌ Timeout esperando resolución manual del captcha');
-          return false;
-        }
+      // En producción sin callback, es un error
+      if (!injectionResult.callbackExecuted && config.isProduction) {
+        console.log('❌ Token inyectado pero callback no ejecutado en producción');
+        return false;
       }
 
       console.log('✅ Captcha resuelto (con advertencias)');
@@ -330,29 +259,128 @@ class RegistraduriaScrap {
     } catch (error) {
       console.error('❌ Error resolviendo captcha:', error);
 
-      // Fallback a modo manual si hay error y NO es batch
-      if (!isBatch) {
-        console.log('🔄 Fallback a modo manual...');
-        try {
-          console.log('👆 Resuelve el captcha manualmente en el navegador');
-          await this.page.waitForFunction(
-            () => {
-              const buttons = Array.from(document.querySelectorAll('button'));
-              const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
-              return submitButton && !submitButton.disabled;
-            },
-            { timeout: 300000 } // 5 minutos
-          );
-          console.log('✅ Captcha resuelto manualmente después de error');
-          return true;
-        } catch (e) {
-          console.error('❌ Timeout en modo manual:', e.message);
-          return false;
-        }
+      // En desarrollo, intentar fallback manual
+      if (!config.isProduction && !isBatch) {
+        console.log('🔄 Fallback a modo manual (desarrollo)...');
+        return await this._esperarCaptchaManual(300000);
       }
 
+      // En producción, fallar limpiamente para que el circuit breaker maneje el retry
       return false;
     }
+  }
+
+  /**
+   * Esperar resolución manual del captcha (solo desarrollo)
+   */
+  async _esperarCaptchaManual(timeout = 300000) {
+    if (config.isProduction) {
+      console.log('❌ Modo manual no disponible en producción');
+      return false;
+    }
+
+    console.log('👆 MODO MANUAL: Resuelve el captcha manualmente en el navegador');
+    console.log(`⏳ Esperando (${timeout / 1000}s máx)...`);
+
+    try {
+      await this.page.waitForFunction(
+        () => {
+          const buttons = Array.from(document.querySelectorAll('button'));
+          const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
+          return submitButton && !submitButton.disabled;
+        },
+        { timeout }
+      );
+      console.log('✅ Captcha resuelto manualmente');
+      return true;
+    } catch (e) {
+      console.log('❌ Timeout esperando resolución manual');
+      return false;
+    }
+  }
+
+  /**
+   * Inyectar token de captcha en la página
+   */
+  async _inyectarTokenCaptcha(token) {
+    return await this.page.evaluate((token) => {
+      try {
+        // Paso 1: Inyectar en textareas
+        document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {
+          el.innerHTML = token;
+          el.value = token;
+        });
+
+        const responseEl = document.getElementById('g-recaptcha-response');
+        if (responseEl) {
+          responseEl.innerHTML = token;
+          responseEl.value = token;
+        }
+
+        // Paso 2: Encontrar el widget y su callback
+        let callbackExecuted = false;
+        if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+          const clients = window.___grecaptcha_cfg.clients;
+
+          Object.keys(clients).forEach(clientId => {
+            const client = clients[clientId];
+            if (!client) return;
+
+            Object.keys(client).forEach(key => {
+              if (isNaN(key)) return;
+
+              const widget = client[key];
+              if (!widget) return;
+
+              if (widget.textarea) {
+                widget.textarea.value = token;
+              }
+
+              const callback = widget.callback;
+              if (callback && typeof callback === 'function') {
+                try {
+                  callback(token);
+                  callbackExecuted = true;
+                } catch (e) {
+                  console.error('Error en callback:', e);
+                }
+              }
+
+              if (widget.callback && typeof widget.callback === 'string') {
+                try {
+                  if (window[widget.callback]) {
+                    window[widget.callback](token);
+                    callbackExecuted = true;
+                  }
+                } catch (e) {
+                  console.error('Error en callback por nombre:', e);
+                }
+              }
+            });
+          });
+        }
+
+        // Paso 3: Override de grecaptcha.getResponse
+        if (typeof grecaptcha !== 'undefined') {
+          grecaptcha.getResponse = function() { return token; };
+        }
+
+        return { success: true, callbackExecuted };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    }, token);
+  }
+
+  /**
+   * Verificar si el captcha fue resuelto (botón habilitado)
+   */
+  async _verificarCaptchaResuelto() {
+    return await this.page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
+      return submitButton ? !submitButton.disabled : false;
+    });
   }
 
   /**

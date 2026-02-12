@@ -9,10 +9,21 @@ const antiCaptchaService = require('./anticaptcha.service');
  */
 class CaptchaResolverService {
   constructor() {
+    this.isProduction = process.env.NODE_ENV === 'production';
+
     // Configuración desde variables de entorno
     this.mode = process.env.CAPTCHA_MODE || 'auto'; // auto, manual, 2captcha, anticaptcha
-    this.batchMode = process.env.CAPTCHA_BATCH_MODE || 'anticaptcha'; // Servicio para consultas masivas
-    this.individualMode = process.env.CAPTCHA_INDIVIDUAL_MODE || 'manual'; // Servicio para consultas individuales
+    this.batchMode = process.env.CAPTCHA_BATCH_MODE || '2captcha'; // Servicio para consultas masivas
+    this.individualMode = process.env.CAPTCHA_INDIVIDUAL_MODE || (this.isProduction ? '2captcha' : 'manual');
+
+    // En producción, nunca permitir modo manual
+    if (this.isProduction) {
+      if (this.batchMode === 'manual') this.batchMode = '2captcha';
+      if (this.individualMode === 'manual') this.individualMode = '2captcha';
+      console.log('🏭 Producción: captcha forzado a modo automático');
+    }
+
+    this.maxRetries = 2; // Reintentos para servicios automáticos
   }
 
   /**
@@ -29,7 +40,12 @@ class CaptchaResolverService {
       service = isBatch ? this.batchMode : this.individualMode;
     }
 
-    console.log(`🎯 Modo de captcha: ${service} (${isBatch ? 'BATCH' : 'INDIVIDUAL'})`);
+    // En producción, nunca modo manual
+    if (this.isProduction && service === 'manual') {
+      service = '2captcha';
+    }
+
+    console.log(`🎯 Modo de captcha: ${service} (${isBatch ? 'BATCH' : 'INDIVIDUAL'}, ${this.isProduction ? 'PROD' : 'DEV'})`);
 
     switch (service) {
       case 'manual':
@@ -37,14 +53,37 @@ class CaptchaResolverService {
         return null;
 
       case 'anticaptcha':
-        return await antiCaptchaService.solveRecaptchaV2(siteKey, pageUrl);
+        return await this._solveWithRetry(() => antiCaptchaService.solveRecaptchaV2(siteKey, pageUrl), 'anticaptcha');
 
       case '2captcha':
-        return await captcha2Service.solveRecaptchaV2(siteKey, pageUrl);
+        return await this._solveWithRetry(() => captcha2Service.solveRecaptchaV2(siteKey, pageUrl), '2captcha');
 
       default:
         throw new Error(`Modo de captcha no reconocido: ${service}`);
     }
+  }
+
+  /**
+   * Ejecutar solver con reintentos automáticos
+   */
+  async _solveWithRetry(solverFn, serviceName) {
+    let lastError;
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Intento ${attempt}/${this.maxRetries} con ${serviceName}...`);
+        const result = await solverFn();
+        return result;
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Intento ${attempt} falló (${serviceName}): ${error.message}`);
+        if (attempt < this.maxRetries) {
+          const delay = attempt * 5000; // Backoff: 5s, 10s
+          console.log(`⏳ Esperando ${delay / 1000}s antes de reintentar...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastError;
   }
 
   /**
