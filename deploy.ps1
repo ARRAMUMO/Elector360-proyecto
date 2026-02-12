@@ -47,18 +47,19 @@ if ($status) {
 Write-Host ""
 Write-Host "[2/3] Desplegando en EC2..." -ForegroundColor Yellow
 
+# Se actualizó 'docker-compose' a 'docker compose' (V2) para mayor compatibilidad
 $commands = @"
 cd $PROJECT_DIR && \
 echo '>> Pulling latest code...' && \
 git pull origin main && \
 echo '>> Rebuilding containers...' && \
-docker-compose down && \
-docker-compose up -d --build && \
+docker compose down && \
+docker compose up -d --build && \
 echo '>> Waiting for health check...' && \
 sleep 10 && \
-docker-compose ps && \
+docker compose ps && \
 echo '>> Checking logs...' && \
-docker-compose logs --tail=20 backend
+docker compose logs --tail=20 backend
 "@
 
 ssh -i "$KEY_PATH" "$EC2_USER@$EC2_IP" $commands
