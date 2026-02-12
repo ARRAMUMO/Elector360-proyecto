@@ -4,21 +4,18 @@ module.exports = {
   // Configuración de Puppeteer
   puppeteer: {
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    headless: true, // Cambiar a false para debugging
+    headless: false, // Navegador visible para fallback manual
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
       '--disable-gpu',
-      '--window-size=1920,1080',
+      '--start-maximized',
       '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     ],
-    defaultViewport: {
-      width: 1920,
-      height: 1080
-    },
-    timeout: 60000 // 60 segundos
+    defaultViewport: null, // Usa el tamaño de la ventana (maximizada)
+    timeout: 120000 // 2 minutos
   },
 
   // Configuración de 2Captcha
@@ -30,7 +27,7 @@ module.exports = {
 
   // URLs
   urls: {
-    registraduria: 'https://wsp.registraduria.gov.co/censo/consultar/'
+    registraduria: 'https://eleccionescolombia.registraduria.gov.co/identificacion'
   },
 
   // Configuración de reintentos
@@ -51,8 +48,8 @@ module.exports = {
   circuitBreaker: {
     failureThreshold: 5,
     successThreshold: 2,
-    timeout: 60000,
-    resetTimeout: 300000 // 5 minutos
+    timeout: 300000, // 5 minutos (para captcha manual)
+    resetTimeout: 600000 // 10 minutos
   },
 
   // Delays aleatorios (para parecer humano)
