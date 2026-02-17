@@ -2,12 +2,14 @@ const express = require('express');
 const router = express.Router();
 const operacionesMasivasController = require('../controllers/operacionesMasivasController');
 const { protect } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/validateRole');
+const { requireCoordinador } = require('../middleware/validateRole');
+const { resolveCampaign } = require('../middleware/campaignScope');
 const upload = require('../middleware/upload');
 
-// Todas las rutas requieren autenticación y ser ADMIN
+// Todas las rutas requieren autenticación, ser COORDINADOR o ADMIN, y scope de campaña
 router.use(protect);
-router.use(requireAdmin);
+router.use(requireCoordinador);
+router.use(resolveCampaign);
 
 // Actualizar toda la base de datos
 router.post('/actualizar-todo', operacionesMasivasController.actualizarBaseDatosCompleta);

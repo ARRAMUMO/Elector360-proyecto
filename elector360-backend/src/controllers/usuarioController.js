@@ -14,7 +14,8 @@ exports.listarUsuarios = asyncHandler(async (req, res) => {
     limit,
     search,
     rol,
-    estado
+    estado,
+    campanaFilter: req.campanaFilter
   });
 
   res.json({
@@ -43,7 +44,11 @@ exports.obtenerUsuario = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.crearUsuario = asyncHandler(async (req, res) => {
-  const usuario = await usuarioService.crearUsuario(req.body);
+  const usuario = await usuarioService.crearUsuario(
+    req.body,
+    req.user.rol,
+    req.campanaId
+  );
 
   res.status(201).json({
     success: true,
@@ -87,7 +92,11 @@ exports.eliminarUsuario = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.cambiarEstado = asyncHandler(async (req, res) => {
-  const usuario = await usuarioService.cambiarEstado(req.params.id);
+  const usuario = await usuarioService.cambiarEstado(
+    req.params.id,
+    req.user.rol,
+    req.campanaId
+  );
 
   res.json({
     success: true,

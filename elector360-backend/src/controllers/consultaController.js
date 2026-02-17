@@ -21,7 +21,8 @@ exports.consultarPersona = asyncHandler(async (req, res) => {
 
   const resultado = await consultaService.consultarPorDocumento(
     documento,
-    req.user._id
+    req.user._id,
+    req.campanaId
   );
 
   res.json({
@@ -58,7 +59,8 @@ exports.confirmarPersona = asyncHandler(async (req, res) => {
   const persona = await consultaService.confirmarYAgregarPersona(
     personaId,
     req.user,
-    datosAdicionales
+    datosAdicionales,
+    req.campanaId
   );
 
   res.json({

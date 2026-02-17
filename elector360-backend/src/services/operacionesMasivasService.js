@@ -8,9 +8,10 @@ class OperacionesMasivasService {
    * Actualizar TODA la base de datos
    * Encola todas las personas para actualización (batch)
    */
-  async actualizarBaseDatosCompleta() {
-    // Obtener todas las personas
-    const personas = await Persona.find().select('documento _id').lean();
+  async actualizarBaseDatosCompleta(campanaId = null) {
+    // Obtener personas (filtradas por campaña si aplica)
+    const filtro = campanaId ? { campana: campanaId } : {};
+    const personas = await Persona.find(filtro).select('documento _id').lean();
 
     if (personas.length === 0) {
       throw new ApiError(400, 'No hay personas para actualizar');
@@ -38,6 +39,7 @@ class OperacionesMasivasService {
       const documentosAInsertar = paraEncolar.map(doc => ({
         documento: doc,
         personaId: docToId.get(doc),
+        campana: campanaId,
         prioridad: 2, // Media
         estado: 'PENDIENTE'
       }));
@@ -139,7 +141,7 @@ class OperacionesMasivasService {
    * 2. Verifica cuáles existen en BD (batch)
    * 3. Encola las que no existen para RPA (batch)
    */
-  async consultarDesdeExcel(filePath) {
+  async consultarDesdeExcel(filePath, campanaId = null) {
     // Leer y validar archivo
     const { cedulas, errores: erroresLectura } = await this.procesarArchivoExcel(filePath);
 
@@ -162,10 +164,11 @@ class OperacionesMasivasService {
     };
 
     try {
-      // 1. Batch: buscar todas las personas existentes en BD (1 query)
-      const personasExistentes = await Persona.find({
-        documento: { $in: todasLasCedulas }
-      }).select('documento nombres apellidos lider').lean();
+      // 1. Batch: buscar todas las personas existentes en BD (1 query, scoped por campaña)
+      const filtroPersonas = { documento: { $in: todasLasCedulas } };
+      if (campanaId) filtroPersonas.campana = campanaId;
+      const personasExistentes = await Persona.find(filtroPersonas)
+        .select('documento nombres apellidos lider').lean();
 
       const docsEnBD = new Set();
       for (const persona of personasExistentes) {
@@ -206,6 +209,7 @@ class OperacionesMasivasService {
         if (paraEncolar.length > 0) {
           const documentosAInsertar = paraEncolar.map(cedula => ({
             documento: cedula,
+            campana: campanaId,
             prioridad: 1, // ALTA (consulta manual)
             estado: 'PENDIENTE'
           }));
@@ -239,7 +243,7 @@ class OperacionesMasivasService {
    * Actualizar personas desde Excel
    * Formato: cedula, telefono, email, estadoContacto, notas
    */
-  async actualizarDesdeExcel(filePath, usuarioId) {
+  async actualizarDesdeExcel(filePath, usuarioId, campanaId = null) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
 
@@ -293,11 +297,12 @@ class OperacionesMasivasService {
 
     if (filasValidas.length === 0) return resultados;
 
-    // 2. Batch: buscar todas las personas existentes (1 query)
+    // 2. Batch: buscar todas las personas existentes (1 query, scoped por campaña)
     const cedulasBuscar = filasValidas.map(f => f.cedula);
-    const personasExistentes = await Persona.find({
-      documento: { $in: cedulasBuscar }
-    }).select('documento nombres apellidos telefono email estadoContacto notas');
+    const filtroPersonas = { documento: { $in: cedulasBuscar } };
+    if (campanaId) filtroPersonas.campana = campanaId;
+    const personasExistentes = await Persona.find(filtroPersonas)
+      .select('documento nombres apellidos telefono email estadoContacto notas');
 
     const personaMap = new Map(personasExistentes.map(p => [p.documento, p]));
 
@@ -448,14 +453,14 @@ class OperacionesMasivasService {
   /**
    * Obtener estado de procesamiento masivo
    */
-  async obtenerEstadoProcesamientoMasivo() {
+  async obtenerEstadoProcesamientoMasivo(campanaFilter = {}) {
     const [total, pendientes, procesando, completadas, errores, erroresRecientes] = await Promise.all([
-      ColaConsulta.countDocuments(),
-      ColaConsulta.countDocuments({ estado: 'PENDIENTE' }),
-      ColaConsulta.countDocuments({ estado: 'PROCESANDO' }),
-      ColaConsulta.countDocuments({ estado: 'COMPLETADO' }),
-      ColaConsulta.countDocuments({ estado: 'ERROR' }),
-      ColaConsulta.find({ estado: 'ERROR' })
+      ColaConsulta.countDocuments(campanaFilter),
+      ColaConsulta.countDocuments({ ...campanaFilter, estado: 'PENDIENTE' }),
+      ColaConsulta.countDocuments({ ...campanaFilter, estado: 'PROCESANDO' }),
+      ColaConsulta.countDocuments({ ...campanaFilter, estado: 'COMPLETADO' }),
+      ColaConsulta.countDocuments({ ...campanaFilter, estado: 'ERROR' }),
+      ColaConsulta.find({ ...campanaFilter, estado: 'ERROR' })
         .sort({ updatedAt: -1 })
         .limit(50)
         .select('documento ultimoError intentos maximoIntentos updatedAt')
@@ -492,9 +497,10 @@ class OperacionesMasivasService {
   /**
    * Obtener resultados completados (con datos de votación)
    */
-  async obtenerResultadosCompletados() {
+  async obtenerResultadosCompletados(campanaFilter = {}) {
     // Obtener consultas completadas y con error (más recientes primero)
     const consultas = await ColaConsulta.find({
+      ...campanaFilter,
       estado: { $in: ['COMPLETADO', 'ERROR'] }
     })
     .sort({ updatedAt: -1 })

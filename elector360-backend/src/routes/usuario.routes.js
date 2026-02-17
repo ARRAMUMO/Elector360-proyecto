@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const usuarioController = require('../controllers/usuarioController');
 const { protect } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/validateRole');
+const { requireCoordinador } = require('../middleware/validateRole');
+const { resolveCampaign } = require('../middleware/campaignScope');
 
-// Todas las rutas requieren autenticación y ser ADMIN
+// Todas las rutas requieren autenticación, ser COORDINADOR o ADMIN, y scope de campaña
 router.use(protect);
-router.use(requireAdmin);
+router.use(requireCoordinador);
+router.use(resolveCampaign);
 
 // Listar y crear
 router.route('/')

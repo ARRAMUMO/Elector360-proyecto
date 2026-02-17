@@ -11,6 +11,7 @@ import Mesas from './pages/Mesas';
 import Perfil from './pages/Perfil';
 import Usuarios from './pages/Usuarios';
 import OperacionesMasivas from './pages/OperacionesMasivas';
+import Campanas from './pages/Campanas';
 import authService from './services/authService';
 
 // Importar
@@ -46,20 +47,30 @@ function App() {
           <Route path="mesas" element={<Mesas />} />
           <Route path="perfil" element={<Perfil />} />
           
-          {/* Rutas solo para Admin */}
-          <Route 
-            path="operaciones-masivas" 
+          {/* Rutas para Admin y Coordinador */}
+          <Route
+            path="operaciones-masivas"
             element={
-              <ProtectedRoute requiredRole="ADMIN">
+              <ProtectedRoute allowedRoles={['ADMIN', 'COORDINADOR']}>
                 <OperacionesMasivas />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route
             path="usuarios"
             element={
-              <ProtectedRoute requiredRole="ADMIN">
+              <ProtectedRoute allowedRoles={['ADMIN', 'COORDINADOR']}>
                 <Usuarios />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Rutas solo para Admin */}
+          <Route
+            path="campanas"
+            element={
+              <ProtectedRoute requiredRole="ADMIN">
+                <Campanas />
               </ProtectedRoute>
             }
           />

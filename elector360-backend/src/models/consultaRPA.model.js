@@ -15,6 +15,10 @@ const consultaRPASchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Persona'
   },
+  campana: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana'
+  },
   estado: {
     type: String,
     enum: ['EN_COLA', 'PROCESANDO', 'COMPLETADO', 'ERROR'],

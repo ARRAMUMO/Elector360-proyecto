@@ -10,16 +10,46 @@ class ConsultaService {
    * - MEDIA (2): Existe pero desactualizada (>6 meses)
    * - BAJA (3): Consulta manual reciente
    */
-  async consultarPorDocumento(documento, usuarioId) {
-    // 1. Buscar en BD local
-    const personaExistente = await Persona.findOne({ documento });
+  async consultarPorDocumento(documento, usuarioId, campanaId = null) {
+    // 1. Buscar en BD local (dentro de la campaña)
+    const filtroPersona = { documento };
+    if (campanaId) filtroPersona.campana = campanaId;
+    const personaExistente = await Persona.findOne(filtroPersona);
+
+    // 1b. Buscar datos de votación globalmente (sin filtro de campaña)
+    // Los datos de votación son los mismos para una cédula sin importar la campaña
+    let datosVotacionGlobal = null;
+    if (!personaExistente && campanaId) {
+      const personaOtraCampana = await Persona.findOne({
+        documento,
+        'puesto.departamento': { $exists: true, $ne: null }
+      });
+      if (personaOtraCampana && personaOtraCampana.puesto) {
+        datosVotacionGlobal = personaOtraCampana.puesto;
+      }
+    }
 
     if (personaExistente) {
+      // Si la persona de esta campaña no tiene datos de votación, copiarlos de otra campaña
+      if (!personaExistente.puesto?.departamento && !datosVotacionGlobal && campanaId) {
+        const personaConPuesto = await Persona.findOne({
+          documento,
+          _id: { $ne: personaExistente._id },
+          'puesto.departamento': { $exists: true, $ne: null }
+        });
+        if (personaConPuesto?.puesto) {
+          personaExistente.puesto = personaConPuesto.puesto;
+          personaExistente.estadoRPA = personaConPuesto.estadoRPA;
+          personaExistente.fechaUltimaConsulta = personaConPuesto.fechaUltimaConsulta;
+          await personaExistente.save();
+        }
+      }
+
       // Verificar si necesita actualizacion
       const necesitaActualizacion = this.necesitaActualizacion(personaExistente);
 
       if (necesitaActualizacion) {
-        // Verificar si ya hay una consulta en proceso
+        // Verificar si ya hay una consulta en proceso (global, no solo de esta campaña)
         const consultaExistente = await ConsultaRPA.findOne({
           documento,
           estado: { $in: ['EN_COLA', 'PROCESANDO'] }
@@ -39,7 +69,7 @@ class ConsultaService {
         }
 
         // Encolar con PRIORIDAD MEDIA (2)
-        const consulta = await this.encolarConsulta(documento, usuarioId, 2, personaExistente._id);
+        const consulta = await this.encolarConsulta(documento, usuarioId, 2, personaExistente._id, campanaId);
 
         return {
           encontrado: true,
@@ -63,25 +93,41 @@ class ConsultaService {
       };
     }
 
-    // 2. No existe, verificar si ya esta en cola
+    // 2. No existe en esta campaña, verificar si ya esta en cola (global)
     const enCola = await ConsultaRPA.findOne({
       documento,
       estado: { $in: ['EN_COLA', 'PROCESANDO'] }
     });
 
     if (enCola) {
-      return {
+      const resultado = {
         encontrado: false,
         enCola: true,
         estado: enCola.estado,
         consultaId: enCola._id,
         mensaje: 'Consulta en proceso. Espera un momento...'
       };
+      // Incluir datos de votación de otra campaña si existen
+      if (datosVotacionGlobal) {
+        resultado.datosVotacion = datosVotacionGlobal;
+        resultado.mensaje = 'Consulta en proceso. Mostrando datos de votacion existentes...';
+      }
+      return resultado;
     }
 
     // 3. No existe ni en BD ni en cola
+    // Si hay datos de votación de otra campaña, no necesita RPA
+    if (datosVotacionGlobal) {
+      return {
+        encontrado: false,
+        enBD: false,
+        datosVotacion: datosVotacionGlobal,
+        mensaje: 'Persona no registrada en esta campana. Datos de votacion disponibles.'
+      };
+    }
+
     // Encolar con PRIORIDAD ALTA (1)
-    const nuevaConsulta = await this.encolarConsulta(documento, usuarioId, 1);
+    const nuevaConsulta = await this.encolarConsulta(documento, usuarioId, 1, null, campanaId);
 
     return {
       encontrado: false,
@@ -124,11 +170,12 @@ class ConsultaService {
    * 2 = MEDIA (existe pero desactualizada)
    * 3 = BAJA (actualizacion programada)
    */
-  async encolarConsulta(documento, usuarioId, prioridad = 2, personaId = null) {
+  async encolarConsulta(documento, usuarioId, prioridad = 2, personaId = null, campanaId = null) {
     const consulta = new ConsultaRPA({
       documento,
       usuario: usuarioId,
       persona: personaId,
+      campana: campanaId,
       prioridad,
       estado: 'EN_COLA',
       intentos: 0
@@ -183,42 +230,46 @@ class ConsultaService {
    * Llamado por el Worker cuando termina
    */
   async guardarResultadoRPA(documento, datosRegistraduria) {
-    let persona = await Persona.findOne({ documento });
+    // El RPA es global: actualizar TODAS las personas con este documento (en todas las campañas)
+    const personas = await Persona.find({ documento });
+    let personaPrincipal = null;
     let esNueva = false;
 
-    if (persona) {
-      // Detectar cambios
-      const cambios = this.detectarCambios(persona, datosRegistraduria);
+    const puestoData = {
+      departamento: datosRegistraduria.datosElectorales?.departamento,
+      municipio: datosRegistraduria.datosElectorales?.municipio,
+      nombrePuesto: datosRegistraduria.datosElectorales?.puestoVotacion,
+      direccion: datosRegistraduria.datosElectorales?.direccion,
+      mesa: datosRegistraduria.datosElectorales?.mesa
+    };
 
-      // Actualizar datos electorales
-      persona.puesto = {
-        departamento: datosRegistraduria.datosElectorales?.departamento,
-        municipio: datosRegistraduria.datosElectorales?.municipio,
-        nombrePuesto: datosRegistraduria.datosElectorales?.puestoVotacion,
-        direccion: datosRegistraduria.datosElectorales?.direccion,
-        mesa: datosRegistraduria.datosElectorales?.mesa
-      };
-      persona.estadoRPA = 'ACTUALIZADO';
-      persona.fechaUltimaConsulta = new Date();
-      persona.fechaSiguienteConsulta = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
-      persona.intentosConsulta = 0;
+    if (personas.length > 0) {
+      for (const persona of personas) {
+        const cambios = this.detectarCambios(persona, datosRegistraduria);
+        persona.puesto = puestoData;
+        persona.estadoRPA = 'ACTUALIZADO';
+        persona.fechaUltimaConsulta = new Date();
+        persona.fechaSiguienteConsulta = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+        persona.intentosConsulta = 0;
 
-      // Guardar historial de cambios si hay
-      if (cambios.length > 0) {
-        await this.guardarHistorialCambios(persona._id, documento, cambios);
+        if (cambios.length > 0) {
+          await this.guardarHistorialCambios(persona._id, documento, cambios, persona.campana);
+        }
+        await persona.save();
       }
+      personaPrincipal = personas[0];
     } else {
-      // No existe, crear nueva
-      esNueva = true;
-      persona = new Persona({
+      // No existe en ninguna campaña. Obtener la campaña de la consulta que la originó.
+      const consultaOrigen = await ConsultaRPA.findOne({
         documento,
-        puesto: {
-          departamento: datosRegistraduria.datosElectorales?.departamento,
-          municipio: datosRegistraduria.datosElectorales?.municipio,
-          nombrePuesto: datosRegistraduria.datosElectorales?.puestoVotacion,
-          direccion: datosRegistraduria.datosElectorales?.direccion,
-          mesa: datosRegistraduria.datosElectorales?.mesa
-        },
+        estado: { $in: ['EN_COLA', 'PROCESANDO'] }
+      });
+
+      esNueva = true;
+      personaPrincipal = new Persona({
+        documento,
+        campana: consultaOrigen?.campana || null,
+        puesto: puestoData,
         estadoRPA: 'ACTUALIZADO',
         fechaUltimaConsulta: new Date(),
         fechaSiguienteConsulta: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
@@ -226,9 +277,8 @@ class ConsultaService {
         confirmado: false,
         intentosConsulta: 0
       });
+      await personaPrincipal.save();
     }
-
-    await persona.save();
 
     // Actualizar estado de la consulta en ConsultaRPA
     await ConsultaRPA.updateMany(
@@ -236,12 +286,12 @@ class ConsultaService {
       {
         estado: 'COMPLETADO',
         completadoEn: new Date(),
-        persona: persona._id,
+        persona: personaPrincipal._id,
         datosPersona: datosRegistraduria
       }
     );
 
-    return { persona, esNueva };
+    return { persona: personaPrincipal, esNueva };
   }
 
   /**
@@ -293,13 +343,14 @@ class ConsultaService {
   /**
    * Guardar historial de cambios
    */
-  async guardarHistorialCambios(personaId, documento, cambios) {
+  async guardarHistorialCambios(personaId, documento, cambios, campanaId = null) {
     const HistorialCambio = require('../models/HistorialCambio');
 
     const historial = new HistorialCambio({
       personaId,
       documento,
       cambios,
+      campana: campanaId,
       detectadoPor: 'RPA_AUTOMATICO',
       notificado: false
     });
@@ -310,11 +361,16 @@ class ConsultaService {
   /**
    * Confirmar y agregar persona a la base del lider
    */
-  async confirmarYAgregarPersona(personaId, usuario, datosAdicionales = {}) {
+  async confirmarYAgregarPersona(personaId, usuario, datosAdicionales = {}, campanaId = null) {
     const persona = await Persona.findById(personaId);
 
     if (!persona) {
       throw new ApiError(404, 'Persona no encontrada');
+    }
+
+    // Verificar scope de campaña
+    if (campanaId && persona.campana?.toString() !== campanaId.toString()) {
+      throw new ApiError(403, 'No puedes confirmar personas de otra campaña');
     }
 
     // Verificar si ya fue confirmada por otro lider

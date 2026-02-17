@@ -3,7 +3,7 @@
 import { Navigate } from 'react-router-dom';
 import authService from '../../../services/authService';
 
-function ProtectedRoute({ children, requiredRole = null }) {
+function ProtectedRoute({ children, requiredRole = null, allowedRoles = null }) {
   const isAuthenticated = authService.isAuthenticated();
   const user = authService.getStoredUser();
 
@@ -12,7 +12,12 @@ function ProtectedRoute({ children, requiredRole = null }) {
     return <Navigate to="/login" replace />;
   }
 
-  // Si requiere un rol específico y no lo tiene, redirigir al dashboard
+  // Si se pasa allowedRoles (array), verificar que el rol del usuario esté incluido
+  if (allowedRoles && !allowedRoles.includes(user?.rol)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Si requiere un rol específico y no lo tiene, redirigir al dashboard (legacy)
   if (requiredRole && user?.rol !== requiredRole) {
     return <Navigate to="/dashboard" replace />;
   }

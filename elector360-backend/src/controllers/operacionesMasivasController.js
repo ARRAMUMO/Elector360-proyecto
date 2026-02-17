@@ -10,7 +10,7 @@ const fs = require('fs').promises;
  * @access  Private (Admin only)
  */
 exports.actualizarBaseDatosCompleta = asyncHandler(async (req, res) => {
-  const resultado = await operacionesMasivasService.actualizarBaseDatosCompleta();
+  const resultado = await operacionesMasivasService.actualizarBaseDatosCompleta(req.campanaId);
 
   res.json({
     success: true,
@@ -39,7 +39,7 @@ exports.consultarDesdeExcel = asyncHandler(async (req, res) => {
 
   try {
     // Procesar archivo
-    const resultados = await operacionesMasivasService.consultarDesdeExcel(req.file.path);
+    const resultados = await operacionesMasivasService.consultarDesdeExcel(req.file.path, req.campanaId);
 
     // Eliminar archivo temporal
     await fs.unlink(req.file.path);
@@ -77,7 +77,8 @@ exports.actualizarDesdeExcel = asyncHandler(async (req, res) => {
     // Procesar archivo
     const resultados = await operacionesMasivasService.actualizarDesdeExcel(
       req.file.path,
-      req.user._id
+      req.user._id,
+      req.campanaId
     );
 
     // Eliminar archivo temporal
@@ -130,7 +131,7 @@ exports.generarReporte = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.obtenerEstado = asyncHandler(async (req, res) => {
-  const estado = await operacionesMasivasService.obtenerEstadoProcesamientoMasivo();
+  const estado = await operacionesMasivasService.obtenerEstadoProcesamientoMasivo(req.campanaFilter);
 
   res.json({
     success: true,
@@ -144,7 +145,7 @@ exports.obtenerEstado = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.obtenerResultados = asyncHandler(async (req, res) => {
-  const resultados = await operacionesMasivasService.obtenerResultadosCompletados();
+  const resultados = await operacionesMasivasService.obtenerResultadosCompletados(req.campanaFilter);
 
   res.json({
     success: true,

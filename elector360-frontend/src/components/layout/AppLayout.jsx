@@ -20,43 +20,49 @@ function AppLayout() {
       name: 'Dashboard',
       icon: '📊',
       path: '/dashboard',
-      roles: ['ADMIN', 'LIDER']
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
       name: 'Consultar',
       icon: '🔍',
       path: '/consulta',
-      roles: ['ADMIN', 'LIDER']
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
       name: 'Personas',
       icon: '👥',
       path: '/personas',
-      roles: ['ADMIN', 'LIDER']
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
       name: 'Mesas de Votacion',
       icon: '🗳️',
       path: '/mesas',
-      roles: ['ADMIN', 'LIDER']
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
       name: 'Operaciones Masivas',
       icon: '📤',
       path: '/operaciones-masivas',
-      roles: ['ADMIN']
+      roles: ['ADMIN', 'COORDINADOR']
     },
     {
       name: 'Usuarios',
       icon: '⚙️',
       path: '/usuarios',
+      roles: ['ADMIN', 'COORDINADOR']
+    },
+    {
+      name: 'Campanas',
+      icon: '🏛️',
+      path: '/campanas',
       roles: ['ADMIN']
     },
     {
       name: 'Mi Perfil',
       icon: '👤',
       path: '/perfil',
-      roles: ['ADMIN', 'LIDER']
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
       name: 'Monitor RPA',
@@ -118,6 +124,9 @@ function AppLayout() {
                 {user?.perfil?.nombres}
               </p>
               <p className="text-xs text-emerald-600 truncate">{user?.rol}</p>
+              {user?.campana?.nombre && (
+                <p className="text-xs text-teal-500 truncate">{user.campana.nombre}</p>
+              )}
             </div>
           </div>
           <button

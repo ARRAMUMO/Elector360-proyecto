@@ -22,6 +22,11 @@ const usuarioSchema = new mongoose.Schema({
     enum: Object.values(ROLES),
     default: ROLES.LIDER
   },
+  campana: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana',
+    default: null
+  },
   perfil: {
     nombres: {
       type: String,
@@ -63,6 +68,7 @@ const usuarioSchema = new mongoose.Schema({
 // Índices
 usuarioSchema.index({ email: 1 });
 usuarioSchema.index({ rol: 1 });
+usuarioSchema.index({ campana: 1 });
 
 // Encriptar password antes de guardar
 usuarioSchema.pre('save', async function(next) {
@@ -85,7 +91,8 @@ usuarioSchema.methods.getJWTPayload = function() {
   return {
     id: this._id,
     email: this.email,
-    rol: this.rol
+    rol: this.rol,
+    campana: this.campana
   };
 };
 

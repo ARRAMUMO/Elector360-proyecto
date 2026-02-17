@@ -21,7 +21,8 @@ exports.listarPersonas = asyncHandler(async (req, res) => {
     municipio,
     mesa,
     nombrePuesto,
-    zona
+    zona,
+    campanaFilter: req.campanaFilter
   };
 
   // Si es LIDER, solo ve sus personas
@@ -46,7 +47,8 @@ exports.obtenerPersona = asyncHandler(async (req, res) => {
   const persona = await personaService.obtenerPorId(
     req.params.id,
     req.user._id,
-    req.user.rol
+    req.user.rol,
+    req.campanaId
   );
 
   res.json({
@@ -61,7 +63,8 @@ exports.obtenerPersona = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.obtenerPorDocumento = asyncHandler(async (req, res) => {
-  const persona = await Persona.findOne({ documento: req.params.documento });
+  const query = { documento: req.params.documento, ...req.campanaFilter };
+  const persona = await Persona.findOne(query);
 
   if (!persona) {
     return res.json({
@@ -92,7 +95,7 @@ exports.obtenerPorDocumento = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.crearPersona = asyncHandler(async (req, res) => {
-  const persona = await personaService.crearPersona(req.body, req.user);
+  const persona = await personaService.crearPersona(req.body, req.user, req.campanaId);
 
   res.status(201).json({
     success: true,
@@ -111,7 +114,8 @@ exports.actualizarPersona = asyncHandler(async (req, res) => {
     req.params.id,
     req.body,
     req.user._id,
-    req.user.rol
+    req.user.rol,
+    req.campanaId
   );
 
   res.json({
@@ -143,7 +147,7 @@ exports.eliminarPersona = asyncHandler(async (req, res) => {
 exports.obtenerMesas = asyncHandler(async (req, res) => {
   const { departamento, municipio, nombrePuesto } = req.query;
 
-  const filtros = { departamento, municipio, nombrePuesto };
+  const filtros = { departamento, municipio, nombrePuesto, campanaFilter: req.campanaFilter };
 
   // Si es LIDER, solo ve sus mesas
   if (req.user.rol === 'LIDER') {
@@ -171,7 +175,8 @@ exports.obtenerPersonasPorMesa = asyncHandler(async (req, res) => {
 
   const personas = await personaService.obtenerPersonasPorMesa(
     { departamento, municipio, nombrePuesto, mesa },
-    liderId
+    liderId,
+    req.campanaFilter
   );
 
   res.json({
@@ -187,7 +192,7 @@ exports.obtenerPersonasPorMesa = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.exportarCSV = asyncHandler(async (req, res) => {
-  const filtros = {};
+  const filtros = { ...req.campanaFilter };
 
   // Si es LIDER, solo exporta sus personas
   if (req.user.rol === 'LIDER') {
@@ -207,7 +212,7 @@ exports.exportarCSV = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.exportarExcel = asyncHandler(async (req, res) => {
-  const filtros = {};
+  const filtros = { ...req.campanaFilter };
 
   if (req.user.rol === 'LIDER') {
     filtros.liderId = req.user._id;
@@ -245,7 +250,7 @@ exports.importarDesdeExcel = asyncHandler(async (req, res) => {
   }
 
   try {
-    const resultado = await personaService.importarDesdeExcel(req.file.path, req.user);
+    const resultado = await personaService.importarDesdeExcel(req.file.path, req.user, req.campanaId);
     await fs.unlink(req.file.path);
 
     res.json({

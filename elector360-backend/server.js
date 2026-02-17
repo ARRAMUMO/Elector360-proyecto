@@ -15,6 +15,7 @@ const usuarioRoutes = require('./src/routes/usuario.routes');
 const consultaRoutes = require('./src/routes/consulta.routes');
 const estadisticasRoutes = require('./src/routes/estadisticas.routes');
 const operacionesMasivasRoutes = require('./src/routes/peracionesMasivas.routes');
+const campanaRoutes = require('./src/routes/campana.routes');
 
 const workerRoutes = require('./src/routes/worker.routes');
 
@@ -85,6 +86,7 @@ app.use('/api/v1/usuarios', usuarioRoutes);
 app.use('/api/v1/consultas', consultaRoutes);
 app.use('/api/v1/estadisticas', estadisticasRoutes);
 app.use('/api/v1/masivas', operacionesMasivasRoutes);
+app.use('/api/v1/campanas', campanaRoutes);
 // Registrar rutas
 app.use('/api/v1/worker', workerRoutes);
 

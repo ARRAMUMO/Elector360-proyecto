@@ -17,11 +17,12 @@ class PersonaService {
       mesa,
       nombrePuesto,
       zona,
-      liderId
+      liderId,
+      campanaFilter
     } = { ...filtros, ...opciones };
 
-    // Construir query
-    const query = {};
+    // Construir query con scope de campaña
+    const query = { ...campanaFilter };
 
     // Filtro por líder (si es LIDER, solo ve sus personas)
     if (liderId) {
@@ -72,11 +73,16 @@ class PersonaService {
   /**
    * Obtener persona por ID
    */
-  async obtenerPorId(id, usuarioId, rol) {
+  async obtenerPorId(id, usuarioId, rol, campanaId = null) {
     const persona = await Persona.findById(id);
 
     if (!persona) {
       throw new ApiError(404, 'Persona no encontrada');
+    }
+
+    // Verificar scope de campaña
+    if (campanaId && persona.campana?.toString() !== campanaId.toString()) {
+      throw new ApiError(403, 'No tienes permiso para ver esta persona');
     }
 
     // Si es LIDER, verificar que sea su persona
@@ -90,17 +96,20 @@ class PersonaService {
   /**
    * Crear persona manualmente
    */
-  async crearPersona(datosPersona, usuario) {
-    // Verificar si ya existe
-    const existente = await Persona.findOne({ documento: datosPersona.documento });
+  async crearPersona(datosPersona, usuario, campanaId = null) {
+    // Verificar si ya existe en esta campaña
+    const filtro = { documento: datosPersona.documento };
+    if (campanaId) filtro.campana = campanaId;
+    const existente = await Persona.findOne(filtro);
 
     if (existente) {
-      throw new ApiError(400, 'Ya existe una persona con esta cédula');
+      throw new ApiError(400, 'Ya existe una persona con esta cédula en esta campaña');
     }
 
-    // Asignar líder
+    // Asignar líder y campaña
     const persona = new Persona({
       ...datosPersona,
+      campana: campanaId,
       lider: {
         id: usuario._id,
         nombre: `${usuario.perfil.nombres} ${usuario.perfil.apellidos}`,
@@ -122,11 +131,16 @@ class PersonaService {
   /**
    * Actualizar persona
    */
-  async actualizarPersona(id, datosActualizacion, usuarioId, rol) {
+  async actualizarPersona(id, datosActualizacion, usuarioId, rol, campanaId = null) {
     const persona = await Persona.findById(id);
 
     if (!persona) {
       throw new ApiError(404, 'Persona no encontrada');
+    }
+
+    // Verificar scope de campaña
+    if (campanaId && persona.campana?.toString() !== campanaId.toString()) {
+      throw new ApiError(403, 'No tienes permiso para actualizar esta persona');
     }
 
     // Si es LIDER, verificar que sea su persona
@@ -190,9 +204,9 @@ class PersonaService {
    * Obtener lista de mesas de votación con estadísticas
    */
   async obtenerMesasVotacion(filtros = {}) {
-    const { liderId, departamento, municipio, nombrePuesto } = filtros;
+    const { liderId, departamento, municipio, nombrePuesto, campanaFilter } = filtros;
 
-    const matchStage = { 'puesto.mesa': { $exists: true, $ne: null, $ne: '' } };
+    const matchStage = { ...campanaFilter, 'puesto.mesa': { $exists: true, $ne: null, $ne: '' } };
 
     if (liderId) {
       matchStage['lider.id'] = liderId;
@@ -248,10 +262,10 @@ class PersonaService {
   /**
    * Obtener personas por mesa específica
    */
-  async obtenerPersonasPorMesa(datosMesa, liderId = null) {
+  async obtenerPersonasPorMesa(datosMesa, liderId = null, campanaFilter = {}) {
     const { departamento, municipio, nombrePuesto, mesa } = datosMesa;
 
-    const query = {};
+    const query = { ...campanaFilter };
 
     if (departamento) query['puesto.departamento'] = new RegExp(departamento, 'i');
     if (municipio) query['puesto.municipio'] = new RegExp(municipio, 'i');
@@ -273,7 +287,7 @@ class PersonaService {
   /**
    * Importar personas desde Excel con datos completos
    */
-  async importarDesdeExcel(filePath, usuario) {
+  async importarDesdeExcel(filePath, usuario, campanaId = null) {
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
@@ -344,11 +358,11 @@ class PersonaService {
       }
     });
 
-    // Batch: buscar existentes
+    // Batch: buscar existentes (dentro de la campaña)
     const documentos = filas.map(f => f.documento);
-    const existentes = await Persona.find({
-      documento: { $in: documentos }
-    }).select('documento').lean();
+    const filtroExistentes = { documento: { $in: documentos } };
+    if (campanaId) filtroExistentes.campana = campanaId;
+    const existentes = await Persona.find(filtroExistentes).select('documento').lean();
 
     const existentesSet = new Set(existentes.map(e => e.documento));
 
@@ -381,9 +395,11 @@ class PersonaService {
         if (Object.keys(puestoData).length > 0) updateFields.puesto = puestoData;
 
         if (Object.keys(updateFields).length > 0) {
+          const updateFilter = { documento: f.documento };
+          if (campanaId) updateFilter.campana = campanaId;
           actualizaciones.push({
             updateOne: {
-              filter: { documento: f.documento },
+              filter: updateFilter,
               update: { $set: updateFields }
             }
           });
@@ -398,6 +414,7 @@ class PersonaService {
           email: f.email,
           puesto: Object.keys(puestoData).length > 0 ? puestoData : undefined,
           estadoContacto: f.estadoContacto || 'PENDIENTE',
+          campana: campanaId,
           lider: liderData,
           confirmado: true,
           origen: 'IMPORTACION'

@@ -20,7 +20,7 @@ exports.protect = asyncHandler(async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Buscar usuario
-    req.user = await Usuario.findById(decoded.id).select('-password');
+    req.user = await Usuario.findById(decoded.id).select('-password').populate('campana', 'nombre estado tipo');
 
     if (!req.user) {
       throw new ApiError(401, 'Usuario no encontrado');

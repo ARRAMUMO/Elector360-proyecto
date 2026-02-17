@@ -5,7 +5,6 @@ const personaSchema = new mongoose.Schema({
   documento: {
     type: String,
     required: [true, 'La cédula es requerida'],
-    unique: true,
     trim: true,
     match: [/^\d{5,10}$/, 'Cédula debe tener entre 5 y 10 dígitos']
   },
@@ -50,6 +49,13 @@ const personaSchema = new mongoose.Schema({
     type: String,
     enum: Object.values(ESTADO_CONTACTO),
     default: ESTADO_CONTACTO.NO_CONTACTADO
+  },
+
+  // Campaña a la que pertenece
+  campana: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana',
+    default: null
   },
 
   // Relación con líder (se asigna al guardar por primera vez)
@@ -102,7 +108,9 @@ const personaSchema = new mongoose.Schema({
 });
 
 // Índices
-personaSchema.index({ documento: 1 }, { unique: true });
+personaSchema.index({ documento: 1, campana: 1 }, { unique: true });
+personaSchema.index({ campana: 1 });
+personaSchema.index({ campana: 1, 'lider.id': 1 });
 personaSchema.index({ 'lider.id': 1 });
 personaSchema.index({ estadoRPA: 1 });
 personaSchema.index({ estadoContacto: 1 });

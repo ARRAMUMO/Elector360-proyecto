@@ -2,10 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import api from '../services/api';
+import authService from '../services/authService';
 import Alert from '../components/common/Alert';
 import Spinner from '../components/common/Spinner';
+import { useToast } from '../components/common/Toast';
 
 function Usuarios() {
+  const { addToast } = useToast();
+  const currentUser = authService.getStoredUser();
+  const esAdmin = currentUser?.rol === 'ADMIN';
+  const esCoordinador = currentUser?.rol === 'COORDINADOR';
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
@@ -17,9 +23,11 @@ function Usuarios() {
     rol: 'LIDER',
     nombres: '',
     apellidos: '',
-    telefono: ''
+    telefono: '',
+    campana: ''
   });
   const [modalAlert, setModalAlert] = useState(null);
+  const [campanas, setCampanas] = useState([]);
 
   useEffect(() => {
     cargarUsuarios();
@@ -38,13 +46,26 @@ function Usuarios() {
       }
     } catch (error) {
       console.error('Error al cargar usuarios:', error);
-      setAlert({ type: 'error', message: 'Error al cargar usuarios' });
+      addToast({ type: 'error', message: 'Error al cargar usuarios' });
       setUsuarios([]);
     }
     setLoading(false);
   };
 
+  const cargarCampanas = async () => {
+    try {
+      const response = await api.get('/campanas');
+      if (response.data.success) {
+        const data = response.data.data?.campanas || response.data.data;
+        setCampanas(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      setCampanas([]);
+    }
+  };
+
   const abrirModal = (usuario = null) => {
+    if (esAdmin) cargarCampanas();
     if (usuario) {
       setEditingUser(usuario);
       setFormData({
@@ -53,7 +74,8 @@ function Usuarios() {
         rol: usuario.rol,
         nombres: usuario.perfil?.nombres || '',
         apellidos: usuario.perfil?.apellidos || '',
-        telefono: usuario.perfil?.telefono || ''
+        telefono: usuario.perfil?.telefono || '',
+        campana: usuario.campana?._id || usuario.campana || ''
       });
     } else {
       setEditingUser(null);
@@ -63,7 +85,8 @@ function Usuarios() {
         rol: 'LIDER',
         nombres: '',
         apellidos: '',
-        telefono: ''
+        telefono: '',
+        campana: ''
       });
     }
     setShowModal(true);
@@ -80,7 +103,8 @@ function Usuarios() {
       rol: 'LIDER',
       nombres: '',
       apellidos: '',
-      telefono: ''
+      telefono: '',
+      campana: ''
     });
     setAlert(null);
     setModalAlert(null);
@@ -102,6 +126,11 @@ function Usuarios() {
       }
     };
 
+    // Incluir campaña si se seleccionó (ADMIN asignando campaña)
+    if (esAdmin && formData.campana) {
+      dataToSend.campana = formData.campana;
+    }
+
     // Solo incluir password si tiene valor
     if (formData.password) {
       dataToSend.password = formData.password;
@@ -113,9 +142,11 @@ function Usuarios() {
         const response = await api.put(`/usuarios/${editingUser._id}`, dataToSend);
 
         if (response.data.success) {
-          setAlert({ type: 'success', message: '✅ Usuario actualizado exitosamente' });
+          const campanaAsignada = formData.campana ? campanas.find(c => c._id === formData.campana) : null;
+          const msgCampana = campanaAsignada ? ` | Campaña: ${campanaAsignada.nombre}` : '';
           cerrarModal();
           cargarUsuarios();
+          addToast({ type: 'success', message: `Usuario actualizado exitosamente${msgCampana}` });
         } else {
           setModalAlert({ type: 'error', message: response.data.error });
         }
@@ -130,9 +161,11 @@ function Usuarios() {
         const response = await api.post('/usuarios', dataToSend);
 
         if (response.data.success) {
-          setAlert({ type: 'success', message: '✅ Usuario creado exitosamente' });
+          const campanaAsignada = formData.campana ? campanas.find(c => c._id === formData.campana) : null;
+          const msgCampana = campanaAsignada ? ` | Campaña: ${campanaAsignada.nombre}` : '';
           cerrarModal();
           cargarUsuarios();
+          addToast({ type: 'success', message: `Usuario creado exitosamente${msgCampana}` });
         } else {
           setModalAlert({ type: 'error', message: response.data.error });
         }
@@ -156,14 +189,14 @@ function Usuarios() {
       const response = await api.put(`/usuarios/${usuario._id}`, { estado: nuevoEstado });
       
       if (response.data.success) {
-        setAlert({ 
-          type: 'success', 
-          message: `✅ Usuario ${nuevoEstado === 'ACTIVO' ? 'activado' : 'desactivado'} exitosamente` 
+        addToast({
+          type: 'success',
+          message: `Usuario ${nuevoEstado === 'ACTIVO' ? 'activado' : 'desactivado'} exitosamente`
         });
         cargarUsuarios();
       }
     } catch (error) {
-      setAlert({ type: 'error', message: 'Error al cambiar estado del usuario' });
+      addToast({ type: 'error', message: 'Error al cambiar estado del usuario' });
     }
   };
 
@@ -176,13 +209,13 @@ function Usuarios() {
       const response = await api.delete(`/usuarios/${usuario._id}`);
       
       if (response.data.success) {
-        setAlert({ type: 'success', message: '✅ Usuario eliminado exitosamente' });
+        addToast({ type: 'success', message: 'Usuario eliminado exitosamente' });
         cargarUsuarios();
       }
     } catch (error) {
-      setAlert({ 
-        type: 'error', 
-        message: error.response?.data?.error || 'Error al eliminar usuario' 
+      addToast({
+        type: 'error',
+        message: error.response?.data?.error || 'Error al eliminar usuario'
       });
     }
   };
@@ -205,21 +238,12 @@ function Usuarios() {
         </div>
         <button
           onClick={() => abrirModal()}
-          className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+          className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
         >
           <span className="mr-2">➕</span>
           Nuevo Usuario
         </button>
       </div>
-
-      {/* Alertas */}
-      {alert && (
-        <Alert 
-          type={alert.type} 
-          message={alert.message} 
-          onClose={() => setAlert(null)}
-        />
-      )}
 
       {/* Lista de Usuarios */}
       {usuarios.length === 0 ? (
@@ -233,7 +257,7 @@ function Usuarios() {
           </p>
           <button
             onClick={() => abrirModal()}
-            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
+            className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
           >
             <span className="mr-2">➕</span>
             Crear Usuario
@@ -259,6 +283,11 @@ function Usuarios() {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Estado
                     </th>
+                    {esAdmin && (
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
+                        Campana
+                      </th>
+                    )}
                     <th className="px-6 py-3 text-left text-xs font-semibold text-emerald-800 uppercase tracking-wider">
                       Estadísticas
                     </th>
@@ -272,8 +301,8 @@ function Usuarios() {
                     <tr key={usuario._id} className="hover:bg-emerald-50/50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center mr-3">
-                            <span className="text-primary-700 font-bold text-sm">
+                          <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                            <span className="text-emerald-700 font-bold text-sm">
                               {usuario.perfil?.nombres?.charAt(0) || 'U'}
                               {usuario.perfil?.apellidos?.charAt(0) || 'S'}
                             </span>
@@ -293,8 +322,10 @@ function Usuarios() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          usuario.rol === 'ADMIN' 
-                            ? 'bg-purple-100 text-purple-800' 
+                          usuario.rol === 'ADMIN'
+                            ? 'bg-purple-100 text-purple-800'
+                            : usuario.rol === 'COORDINADOR'
+                            ? 'bg-teal-100 text-teal-800'
                             : 'bg-blue-100 text-blue-800'
                         }`}>
                           {usuario.rol}
@@ -309,6 +340,11 @@ function Usuarios() {
                           {usuario.estado}
                         </span>
                       </td>
+                      {esAdmin && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {usuario.campana?.nombre || '-'}
+                        </td>
+                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className="text-xs">
                           <div>Personas: {usuario.stats?.personasRegistradas || 0}</div>
@@ -319,7 +355,7 @@ function Usuarios() {
                         <div className="flex items-center justify-end space-x-2">
                           <button
                             onClick={() => abrirModal(usuario)}
-                            className="text-primary-600 hover:text-primary-900"
+                            className="text-emerald-600 hover:text-emerald-900"
                             title="Editar"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -359,8 +395,8 @@ function Usuarios() {
               <div key={usuario._id} className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm p-6 border border-emerald-100">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center flex-1">
-                    <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-primary-700 font-bold">
+                    <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mr-3">
+                      <span className="text-emerald-700 font-bold">
                         {usuario.perfil?.nombres?.charAt(0) || 'U'}
                         {usuario.perfil?.apellidos?.charAt(0) || 'S'}
                       </span>
@@ -374,7 +410,7 @@ function Usuarios() {
                   </div>
                   <div className="flex flex-col gap-1">
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      usuario.rol === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                      usuario.rol === 'ADMIN' ? 'bg-purple-100 text-purple-800' : usuario.rol === 'COORDINADOR' ? 'bg-teal-100 text-teal-800' : 'bg-blue-100 text-blue-800'
                     }`}>
                       {usuario.rol}
                     </span>
@@ -403,16 +439,16 @@ function Usuarios() {
                   </div>
                 </div>
 
-                <div className="flex space-x-2">
+                <div className="flex space-x-2 pt-2 border-t border-gray-100">
                   <button
                     onClick={() => abrirModal(usuario)}
-                    className="flex-1 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium"
+                    className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium transition-colors"
                   >
                     Editar
                   </button>
                   <button
                     onClick={() => toggleEstado(usuario)}
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       usuario.estado === 'ACTIVO'
                         ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
                         : 'bg-green-100 text-green-800 hover:bg-green-200'
@@ -422,7 +458,7 @@ function Usuarios() {
                   </button>
                   <button
                     onClick={() => eliminarUsuario(usuario)}
-                    className="px-3 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 text-sm font-medium"
+                    className="px-3 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 text-sm font-medium transition-colors"
                   >
                     Eliminar
                   </button>
@@ -476,7 +512,7 @@ function Usuarios() {
                     value={formData.email}
                     onChange={(e) => setFormData({...formData, email: e.target.value})}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -491,7 +527,7 @@ function Usuarios() {
                     required={!editingUser}
                     minLength="6"
                     placeholder={editingUser ? 'Dejar en blanco para no cambiar' : ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -503,22 +539,46 @@ function Usuarios() {
                     value={formData.rol}
                     onChange={(e) => setFormData({...formData, rol: e.target.value})}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    disabled={esCoordinador}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   >
-                    <option value="LIDER">Líder</option>
-                    <option value="ADMIN">Admin</option>
+                    <option value="LIDER">Lider</option>
+                    {esAdmin && <option value="COORDINADOR">Coordinador</option>}
+                    {esAdmin && <option value="ADMIN">Admin</option>}
                   </select>
                 </div>
 
+                {/* Selector de campaña (solo ADMIN, visible para COORDINADOR y LIDER) */}
+                {esAdmin && formData.rol !== 'ADMIN' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Campana {formData.rol === 'COORDINADOR' ? '*' : ''}
+                    </label>
+                    <select
+                      value={formData.campana}
+                      onChange={(e) => setFormData({...formData, campana: e.target.value})}
+                      required={formData.rol === 'COORDINADOR'}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Seleccionar campana...</option>
+                      {campanas.map(c => (
+                        <option key={c._id} value={c._id}>
+                          {c.nombre} ({c.tipo})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Teléfono
+                    Telefono
                   </label>
                   <input
                     type="tel"
                     value={formData.telefono}
                     onChange={(e) => setFormData({...formData, telefono: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -531,7 +591,7 @@ function Usuarios() {
                     value={formData.nombres}
                     onChange={(e) => setFormData({...formData, nombres: e.target.value})}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
 
@@ -544,7 +604,7 @@ function Usuarios() {
                     value={formData.apellidos}
                     onChange={(e) => setFormData({...formData, apellidos: e.target.value})}
                     required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>

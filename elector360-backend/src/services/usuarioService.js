@@ -7,9 +7,9 @@ class UsuarioService {
    * Listar usuarios
    */
   async listarUsuarios(opciones = {}) {
-    const { page = 1, limit = 50, search, rol, estado } = opciones;
+    const { page = 1, limit = 50, search, rol, estado, campanaFilter } = opciones;
 
-    const query = {};
+    const query = { ...campanaFilter };
 
     if (search) {
       query.$or = [
@@ -25,6 +25,7 @@ class UsuarioService {
     const [usuarios, total] = await Promise.all([
       Usuario.find(query)
         .select('-password')
+        .populate('campana', 'nombre estado tipo')
         .sort({ createdAt: -1 })
         .limit(limit * 1)
         .skip((page - 1) * limit),
@@ -59,7 +60,16 @@ class UsuarioService {
   /**
    * Crear usuario
    */
-  async crearUsuario(datosUsuario) {
+  async crearUsuario(datosUsuario, creadorRol = 'ADMIN', creadorCampanaId = null) {
+    // COORDINADOR solo puede crear LIDER y fuerza su campaña
+    if (creadorRol === 'COORDINADOR') {
+      if (datosUsuario.rol && datosUsuario.rol !== 'LIDER') {
+        throw new ApiError(403, 'Solo puedes crear usuarios con rol LIDER');
+      }
+      datosUsuario.rol = 'LIDER';
+      datosUsuario.campana = creadorCampanaId;
+    }
+
     // Verificar si el email ya existe
     const existente = await Usuario.findOne({ email: datosUsuario.email });
 
@@ -89,7 +99,8 @@ class UsuarioService {
     const camposPermitidos = [
       'perfil',
       'rol',
-      'estado'
+      'estado',
+      'campana'
     ];
 
     camposPermitidos.forEach(campo => {
@@ -142,11 +153,18 @@ class UsuarioService {
   /**
    * Cambiar estado (activar/desactivar)
    */
-  async cambiarEstado(id) {
+  async cambiarEstado(id, solicitanteRol = 'ADMIN', solicitanteCampanaId = null) {
     const usuario = await Usuario.findById(id);
 
     if (!usuario) {
       throw new ApiError(404, 'Usuario no encontrado');
+    }
+
+    // COORDINADOR solo puede cambiar estado de usuarios de su campaña
+    if (solicitanteRol === 'COORDINADOR') {
+      if (!usuario.campana || usuario.campana.toString() !== solicitanteCampanaId?.toString()) {
+        throw new ApiError(403, 'No tienes permiso para modificar este usuario');
+      }
     }
 
     usuario.estado = usuario.estado === 'ACTIVO' ? 'INACTIVO' : 'ACTIVO';

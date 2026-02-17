@@ -25,6 +25,10 @@ const historialCambioSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Usuario'
   },
+  campana: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana'
+  },
   notificado: {
     type: Boolean,
     default: false

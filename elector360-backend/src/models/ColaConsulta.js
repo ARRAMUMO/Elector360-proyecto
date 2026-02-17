@@ -9,6 +9,10 @@ const colaConsultaSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Persona'
   },
+  campana: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana'
+  },
   prioridad: {
     type: Number,
     default: 2,

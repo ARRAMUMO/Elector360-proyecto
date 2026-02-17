@@ -12,9 +12,17 @@ const Usuario = require('../models/Usuario');
 exports.getDashboardStats = asyncHandler(async (req, res) => {
   const usuario = req.user;
   const esAdmin = usuario.rol === 'ADMIN';
+  const esCoordinador = usuario.rol === 'COORDINADOR';
 
-  // Estadísticas base
-  const filtro = esAdmin ? {} : { 'lider.id': usuario._id, confirmado: true };
+  // Estadísticas base con scope de campaña
+  let filtro;
+  if (esAdmin) {
+    filtro = { ...req.campanaFilter };
+  } else if (esCoordinador) {
+    filtro = { ...req.campanaFilter };
+  } else {
+    filtro = { 'lider.id': usuario._id, confirmado: true, ...req.campanaFilter };
+  }
 
   const [
     totalPersonas,
@@ -50,39 +58,42 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
 
     // Consultas hoy
     ColaConsulta.countDocuments({
+      ...req.campanaFilter,
       createdAt: {
         $gte: new Date(new Date().setHours(0, 0, 0, 0))
       }
     }),
 
-    // Cambios recientes (solo para ADMIN)
-    esAdmin 
-      ? HistorialCambio.find()
+    // Cambios recientes (solo para ADMIN/COORDINADOR)
+    (esAdmin || esCoordinador)
+      ? HistorialCambio.find(req.campanaFilter)
           .populate('personaId', 'documento nombres apellidos')
           .sort({ createdAt: -1 })
           .limit(5)
       : [],
 
     // Actividad reciente (últimas consultas)
-    ColaConsulta.find({ estado: 'COMPLETADO' })
+    ColaConsulta.find({ estado: 'COMPLETADO', ...req.campanaFilter })
       .sort({ fechaProcesamiento: -1 })
       .limit(10)
       .select('documento estado fechaProcesamiento')
   ]);
 
-  // Estadísticas RPA (solo ADMIN)
+  // Estadísticas RPA (ADMIN y COORDINADOR)
   let statsRPA = null;
-  if (esAdmin) {
+  if (esAdmin || esCoordinador) {
     const [enCola, procesandoHoy, erroresHoy] = await Promise.all([
-      ColaConsulta.countDocuments({ estado: 'PENDIENTE' }),
+      ColaConsulta.countDocuments({ estado: 'PENDIENTE', ...req.campanaFilter }),
       ColaConsulta.countDocuments({
         estado: 'COMPLETADO',
+        ...req.campanaFilter,
         fechaProcesamiento: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0))
         }
       }),
       ColaConsulta.countDocuments({
         estado: 'ERROR',
+        ...req.campanaFilter,
         updatedAt: {
           $gte: new Date(new Date().setHours(0, 0, 0, 0))
         }
@@ -97,7 +108,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       procesadasHoy: procesandoHoy,
       erroresHoy,
       costoHoy: costoHoy.toFixed(2),
-      consultasEnProceso: await ColaConsulta.countDocuments({ estado: 'PROCESANDO' })
+      consultasEnProceso: await ColaConsulta.countDocuments({ estado: 'PROCESANDO', ...req.campanaFilter })
     };
   }
 
@@ -126,7 +137,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
 exports.getHistorialConsultas = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, estado } = req.query;
 
-  const filtro = {};
+  const filtro = { ...req.campanaFilter };
   if (estado) {
     filtro.estado = estado;
   }
@@ -158,9 +169,15 @@ exports.getHistorialConsultas = asyncHandler(async (req, res) => {
  * @access  Private (ADMIN)
  */
 exports.getEstadisticasPorDepartamento = asyncHandler(async (req, res) => {
+  const matchFilter = { confirmado: true, ...req.campanaFilter };
+  // Convertir campana string a ObjectId para aggregate
+  if (matchFilter.campana && typeof matchFilter.campana === 'string') {
+    const mongoose = require('mongoose');
+    matchFilter.campana = new mongoose.Types.ObjectId(matchFilter.campana);
+  }
   const stats = await Persona.aggregate([
-    { 
-      $match: { confirmado: true } 
+    {
+      $match: matchFilter
     },
     {
       $group: {

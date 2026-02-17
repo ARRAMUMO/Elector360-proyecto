@@ -35,6 +35,11 @@ function Dashboard() {
         </h1>
         <p className="text-gray-500 mt-1">
           Bienvenido, {user?.perfil?.nombres}
+          {user?.campana?.nombre && (
+            <span className="ml-2 text-sm text-teal-600 font-medium">
+              | {user.campana.nombre}
+            </span>
+          )}
         </p>
       </div>
 
@@ -98,8 +103,8 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Monitor RPA (Solo Admin) */}
-      {user?.rol === 'ADMIN' && stats?.statsRPA && (
+      {/* Monitor RPA (Admin y Coordinador) */}
+      {(user?.rol === 'ADMIN' || user?.rol === 'COORDINADOR') && stats?.statsRPA && (
         <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm p-6 border border-emerald-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
             <span className="text-2xl mr-2">🤖</span>

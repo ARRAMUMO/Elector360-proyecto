@@ -16,4 +16,5 @@ exports.requireRole = (...roles) => {
 
 // Shortcuts
 exports.requireAdmin = exports.requireRole('ADMIN');
-exports.requireLider = exports.requireRole('LIDER', 'ADMIN');
+exports.requireCoordinador = exports.requireRole('COORDINADOR', 'ADMIN');
+exports.requireLider = exports.requireRole('LIDER', 'COORDINADOR', 'ADMIN');

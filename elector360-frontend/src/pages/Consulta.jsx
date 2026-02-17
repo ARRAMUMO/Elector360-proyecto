@@ -92,6 +92,10 @@ function Consulta() {
         }
         // Caso 3: Persona no está en BD, se encola consulta RPA
         else if (consultaId && !persona) {
+          // Si hay datos de votación de otra campaña, mostrarlos mientras el RPA procesa
+          if (data.datosVotacion) {
+            setResultado({ documento, puesto: data.datosVotacion });
+          }
           setConsultaRPA({ _id: consultaId, estado: data.estado });
           setEstadoBusqueda({
             tipo: 'consultando_rpa',
@@ -101,6 +105,20 @@ function Consulta() {
           });
           setAlert({ type: 'info', message: mensaje || '🤖 Consultando en la Registraduría...' });
           iniciarPolling(consultaId);
+        }
+        // Caso 3b: Persona no está en esta campaña pero tiene datos de votación de otra
+        else if (!encontrado && data.datosVotacion && !consultaId) {
+          setResultado({ documento, puesto: data.datosVotacion });
+          setEstadoBusqueda({
+            tipo: 'encontrada_bd',
+            documento,
+            fuente: 'Datos de votación existentes',
+            fecha: new Date().toLocaleString()
+          });
+          setAlert({
+            type: 'success',
+            message: mensaje || '✅ Datos de votación encontrados'
+          });
         }
         // Caso 4: Persona no encontrada y no se puede consultar RPA
         else if (enBD === false && !persona && !consultaId) {
@@ -815,7 +833,8 @@ function Consulta() {
         const liderId = typeof tieneLeader === 'object' ? tieneLeader?.toString() : tieneLeader;
         const esPersonaMia = liderId && currentUser?._id === liderId;
         const esAdmin = currentUser?.rol === 'ADMIN';
-        const puedeEditar = resultado._id && resultado.confirmado && (esPersonaMia || esAdmin);
+        const esCoordinador = currentUser?.rol === 'COORDINADOR';
+        const puedeEditar = resultado._id && resultado.confirmado && (esPersonaMia || esAdmin || esCoordinador);
 
         return (
         <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden animate-fade-in">
