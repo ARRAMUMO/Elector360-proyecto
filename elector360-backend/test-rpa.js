@@ -4,6 +4,8 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
 const path = require('path');
+const { createCursor } = require('ghost-cursor');
+const UserAgent = require('user-agents');
 
 puppeteer.use(StealthPlugin());
 
@@ -21,19 +23,29 @@ async function testRPA() {
       fs.mkdirSync(screenshotsDir);
     }
 
+    // Generar User Agent aleatorio (simulación)
+    const userAgent = new UserAgent({ deviceCategory: 'desktop' }).toString();
+    // const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+
     // Lanzar navegador (headless: false para ver el proceso)
     browser = await puppeteer.launch({
       headless: false, // Ver el navegador
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--window-size=1920,1080'
+        '--window-size=1920,1080',
+        '--disable-blink-features=AutomationControlled', // Ocultar que es automatizado
+        `--user-agent=${userAgent}`
       ],
       defaultViewport: { width: 1920, height: 1080 }
     });
 
     const page = await browser.newPage();
     page.setDefaultTimeout(60000);
+
+    // Inicializar Ghost Cursor (movimiento humano del mouse)
+    const cursor = createCursor(page);
+    // await cursor.toggleRandomMove(true);
 
     // 1. Navegar a la página
     console.log('📄 Navegando a la Registraduría...');
@@ -158,8 +170,12 @@ async function testRPA() {
     }
 
     if (documentoInput) {
-      await documentoInput.click();
-      await page.keyboard.type(DOCUMENTO_PRUEBA, { delay: 100 });
+      // Usar click humano (mueve el mouse y hace click)
+      await cursor.click(documentoInput);
+      // Escribir con velocidad variable (más humano)
+      for (const char of DOCUMENTO_PRUEBA) {
+        await page.keyboard.type(char, { delay: Math.random() * 100 + 50 });
+      }
       console.log(`   ✅ Documento ${DOCUMENTO_PRUEBA} ingresado`);
 
       await page.screenshot({ path: path.join(screenshotsDir, '02-documento-ingresado.png') });
@@ -168,7 +184,11 @@ async function testRPA() {
     }
 
     // Esperar un momento
-    await new Promise(r => setTimeout(r, 2000));
+    // Mover el mouse aleatoriamente antes de verificar captcha
+    await cursor.moveTo({ x: Math.random() * 500 + 100, y: Math.random() * 500 + 100 });
+    await cursor.moveTo({ x: Math.random() * 500 + 100, y: Math.random() * 500 + 100 });
+    
+    await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
 
     // 4. Verificar si hay captcha visible
     console.log('\n🔐 Verificando captcha...');

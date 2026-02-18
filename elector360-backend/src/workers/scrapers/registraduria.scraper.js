@@ -5,6 +5,8 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('../config/worker.config');
 const captchaResolver = require('../services/captcha-resolver.service');
 const helpers = require('../utils/helpers');
+const { createCursor } = require('ghost-cursor');
+const UserAgent = require('user-agents');
 
 // Aplicar plugin stealth
 puppeteer.use(StealthPlugin());
@@ -13,6 +15,7 @@ class RegistraduriaScrap {
   constructor() {
     this.browser = null;
     this.page = null;
+    this.cursor = null;
   }
 
   /**
@@ -20,9 +23,33 @@ class RegistraduriaScrap {
    */
   async init() {
     try {
-      this.browser = await puppeteer.launch(config.puppeteer);
+      const launchOptions = {
+        ...config.puppeteer,
+        args: [
+          ...(config.puppeteer.args || []),
+          `--user-agent=${userAgent}`,
+          '--disable-blink-features=AutomationControlled'
+        ]
+      };
+
+      // Configuración de Proxy
+      if (process.env.PROXY_SERVER) {
+        console.log(`🌐 Usando proxy: ${process.env.PROXY_SERVER}`);
+        launchOptions.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+      }
+
+      this.browser = await puppeteer.launch(launchOptions);
       this.page = await this.browser.newPage();
 
+      // Autenticación de Proxy (si es requerida)
+      if (process.env.PROXY_SERVER && process.env.PROXY_USERNAME && process.env.PROXY_PASSWORD) {
+        await this.page.authenticate({
+          username: process.env.PROXY_USERNAME,
+          password: process.env.PROXY_PASSWORD
+        });
+      }
+
+      this.cursor = createCursor(this.page);
       this.page.setDefaultTimeout(config.puppeteer.timeout);
 
       // Anti-detección: eliminar señales de automation
@@ -89,6 +116,7 @@ class RegistraduriaScrap {
       } catch (e) { /* ignorar */ }
       this.browser = null;
       this.page = null;
+      this.cursor = null;
       await this.init();
     }
   }
@@ -115,6 +143,10 @@ class RegistraduriaScrap {
 
       // 2. Llenar formulario
       await this.llenarFormulario(documento);
+
+      // Mover el mouse y esperar para simular comportamiento humano
+      await this.cursor.moveTo({ x: Math.random() * 500 + 100, y: Math.random() * 500 + 100 });
+      await helpers.randomDelay(1000, 2000);
 
       // 3. Resolver captcha (con modo apropiado)
       const captchaSolved = await this.resolverCaptcha(isBatch);
@@ -165,9 +197,8 @@ class RegistraduriaScrap {
       await this.page.waitForSelector(documentoSelector, { timeout: 10000 });
 
       // Limpiar el campo por si tiene valor
-      await this.page.click(documentoSelector, { clickCount: 3 });
-
-      // Escribir el documento de forma humana
+      await this.cursor.click(documentoSelector);
+econ
       await helpers.typeHuman(this.page, documentoSelector, documento, config);
 
       // Scroll aleatorio para parecer humano
