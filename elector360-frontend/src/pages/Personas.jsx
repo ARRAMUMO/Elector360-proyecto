@@ -6,6 +6,8 @@ import authService from '../services/authService';
 import useDebounce from '../hooks/useDebounce';
 import Alert from '../components/common/Alert';
 import Spinner from '../components/common/Spinner';
+import { useToast } from '../components/common/Toast.jsx';
+import consultaService from '../services/consultaService';
 
 const initialFormData = {
   documento: '',
@@ -23,9 +25,13 @@ const initialFormData = {
 };
 
 function Personas() {
+  const { addToast } = useToast();
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
+
+  // Usuario actual y rol
+
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -36,6 +42,7 @@ function Personas() {
   // Usuario actual y rol
   const user = authService.getStoredUser();
   const esAdmin = user?.rol === 'ADMIN';
+  const esCoordi = user?.rol === 'COORDINADOR';
 
   // Modal de creación
   const [showModal, setShowModal] = useState(false);
@@ -60,6 +67,22 @@ function Personas() {
     zona: '', nombrePuesto: '', direccion: '', mesa: '', notas: ''
   });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [modalError, setModalError] = useState(null);
+
+  // Modal "Reclamar y Completar" (para personas sin confirmado)
+  const [showReclamarModal, setShowReclamarModal] = useState(false);
+  const [personaReclamando, setPersonaReclamando] = useState(null);
+  const [datosReclamar, setDatosReclamar] = useState({ nombres: '', apellidos: '', telefono: '', email: '', notas: '' });
+  const [reclamando, setReclamando] = useState(false);
+  const [reclamarError, setReclamarError] = useState(null);
+
+  // Modal "Reasignar Líder" (COORDINADOR/ADMIN)
+  const [showReasignarModal, setShowReasignarModal] = useState(false);
+  const [personaReasignando, setPersonaReasignando] = useState(null);
+  const [usuariosLider, setUsuariosLider] = useState([]);
+  const [liderSeleccionado, setLiderSeleccionado] = useState('');
+  const [reasignando, setReasignando] = useState(false);
+  const [reasignarError, setReasignarError] = useState(null);
 
   // Modal de detalle
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -314,6 +337,7 @@ function Personas() {
       mesa: p.mesa || '',
       notas: persona.notas || ''
     });
+    setModalError(null);
     setShowEditModal(true);
     setMenuAbierto(null);
   };
@@ -325,10 +349,11 @@ function Personas() {
 
   const guardarEdicion = async () => {
     if (!personaEditando?._id) {
-      setAlert({ type: 'error', message: 'No se puede actualizar: falta el ID' });
+      setModalError('No se puede actualizar: falta el ID de la persona');
       return;
     }
     setGuardandoEdicion(true);
+    setModalError(null);
     try {
       const datos = {
         nombres: datosEdicion.nombres.trim() || undefined,
@@ -354,14 +379,14 @@ function Personas() {
 
       const respuesta = await personaService.actualizar(personaEditando._id, datos);
       if (respuesta.success) {
-        setAlert({ type: 'success', message: 'Persona actualizada exitosamente' });
+        addToast({ type: 'success', message: 'Persona actualizada exitosamente' });
         setShowEditModal(false);
         cargarPersonas();
       } else {
-        setAlert({ type: 'error', message: respuesta.error || 'Error al actualizar' });
+        setModalError(respuesta.error || 'Error al actualizar la persona');
       }
     } catch {
-      setAlert({ type: 'error', message: 'Error al actualizar la persona' });
+      setModalError('Error de conexión al actualizar la persona');
     } finally {
       setGuardandoEdicion(false);
     }
@@ -407,6 +432,71 @@ function Personas() {
     setEliminando(false);
   };
 
+  // === Handlers: Reclamar y Completar ===
+
+  const abrirReclamarModal = (persona) => {
+    setPersonaReclamando(persona);
+    setDatosReclamar({ nombres: persona.nombres || '', apellidos: persona.apellidos || '', telefono: persona.telefono || '', email: persona.email || '', notas: persona.notas || '' });
+    setReclamarError(null);
+    setShowReclamarModal(true);
+    setMenuAbierto(null);
+  };
+
+  const handleReclamarChange = (e) => {
+    const { name, value } = e.target;
+    setDatosReclamar(prev => ({ ...prev, [name]: value }));
+  };
+
+  const reclamarPersona = async () => {
+    if (!personaReclamando?._id) return;
+    setReclamando(true);
+    setReclamarError(null);
+    const respuesta = await consultaService.confirmarPersona(personaReclamando._id, datosReclamar);
+    if (respuesta.success) {
+      addToast({ type: 'success', message: 'Persona reclamada y completada exitosamente' });
+      setShowReclamarModal(false);
+      cargarPersonas();
+    } else {
+      setReclamarError(respuesta.error || 'Error al reclamar la persona');
+    }
+    setReclamando(false);
+  };
+
+  // === Handlers: Reasignar Líder ===
+
+  const abrirReasignarModal = async (persona) => {
+    setPersonaReasignando(persona);
+    setLiderSeleccionado('');
+    setReasignarError(null);
+    setShowReasignarModal(true);
+    setMenuAbierto(null);
+    // Cargar lista de usuarios disponibles para asignar
+    const resultado = await personaService.listarUsuariosParaAsignar();
+    if (resultado.success) {
+      setUsuariosLider(resultado.usuarios.filter(u => u.rol === 'LIDER' || u.rol === 'COORDINADOR'));
+    } else {
+      setReasignarError(resultado.error || 'No se pudo cargar la lista de usuarios');
+    }
+  };
+
+  const reasignarLider = async () => {
+    if (!personaReasignando?._id || !liderSeleccionado) {
+      setReasignarError('Selecciona un líder para asignar');
+      return;
+    }
+    setReasignando(true);
+    setReasignarError(null);
+    const respuesta = await personaService.asignarLider(personaReasignando._id, liderSeleccionado);
+    if (respuesta.success) {
+      addToast({ type: 'success', message: 'Líder reasignado exitosamente' });
+      setShowReasignarModal(false);
+      cargarPersonas();
+    } else {
+      setReasignarError(respuesta.error || 'Error al reasignar líder');
+    }
+    setReasignando(false);
+  };
+
   // === Componentes reutilizables inline ===
 
   const StatusDropdown = ({ personaId, estadoActual }) => (
@@ -425,14 +515,17 @@ function Personas() {
   );
 
   const ActionMenu = ({ persona }) => (
-    <div ref={menuRef} className="absolute z-30 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1" style={{ right: 0 }}>
-      <button
-        onClick={() => abrirEditModal(persona)}
-        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-        Editar
-      </button>
+    <div ref={menuRef} className="absolute z-30 mt-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1" style={{ right: 0 }}>
+      {/* Editar solo aparece si la persona está confirmada (tiene lider) */}
+      {persona.confirmado && (
+        <button
+          onClick={() => abrirEditModal(persona)}
+          className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+          Editar
+        </button>
+      )}
       <button
         onClick={() => abrirDetalle(persona)}
         className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
@@ -440,6 +533,32 @@ function Personas() {
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
         Ver Detalles
       </button>
+      {/* Reclamar y Completar: para personas sin líder asignado */}
+      {!persona.confirmado && (
+        <>
+          <div className="border-t border-gray-100 my-1"></div>
+          <button
+            onClick={() => abrirReclamarModal(persona)}
+            className="w-full text-left px-4 py-2.5 text-sm text-green-700 hover:bg-green-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+            Reclamar y Completar
+          </button>
+        </>
+      )}
+      {/* Reasignar Líder: solo COORDINADOR y ADMIN */}
+      {(esAdmin || esCoordi) && (
+        <>
+          <div className="border-t border-gray-100 my-1"></div>
+          <button
+            onClick={() => abrirReasignarModal(persona)}
+            className="w-full text-left px-4 py-2.5 text-sm text-blue-700 hover:bg-blue-50 flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+            Reasignar Líder
+          </button>
+        </>
+      )}
       {esAdmin && (
         <>
           <div className="border-t border-gray-100 my-1"></div>
@@ -501,15 +620,13 @@ function Personas() {
             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
             CSV
           </button>
-          {esAdmin && (
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
-            >
-              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-              Importar
-            </button>
-          )}
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
+          >
+            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+            Importar
+          </button>
         </div>
       </div>
 
@@ -1047,6 +1164,16 @@ function Personas() {
               </div>
             </div>
 
+            {/* Error dentro del modal */}
+            {modalError && (
+              <div className="mx-6 mb-4 px-4 py-3 bg-red-50 border border-red-300 rounded-lg flex items-start gap-2">
+                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-700">{modalError}</p>
+              </div>
+            )}
+
             {/* Footer */}
             <div className="px-6 py-4 bg-gray-50 border-t rounded-b-2xl flex space-x-3">
               <button
@@ -1339,6 +1466,130 @@ function Personas() {
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium disabled:opacity-50 transition-colors"
               >
                 {eliminando ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reclamar y Completar */}
+      {showReclamarModal && personaReclamando && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full">
+            <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Reclamar y Completar</h3>
+                  <p className="text-green-100 text-sm mt-1">CC: {personaReclamando.documento}</p>
+                </div>
+                <button onClick={() => setShowReclamarModal(false)} className="text-white/80 hover:text-white">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombres <span className="text-red-500">*</span></label>
+                  <input type="text" name="nombres" value={datosReclamar.nombres} onChange={handleReclamarChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="Nombres completos" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Apellidos <span className="text-red-500">*</span></label>
+                  <input type="text" name="apellidos" value={datosReclamar.apellidos} onChange={handleReclamarChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="Apellidos completos" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                  <input type="tel" name="telefono" value={datosReclamar.telefono} onChange={handleReclamarChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="3001234567" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" name="email" value={datosReclamar.email} onChange={handleReclamarChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="correo@ejemplo.com" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                <textarea name="notas" value={datosReclamar.notas} onChange={handleReclamarChange} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none" placeholder="Notas adicionales..." />
+              </div>
+              {reclamarError && (
+                <div className="px-4 py-3 bg-red-50 border border-red-300 rounded-lg flex items-start gap-2">
+                  <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-sm text-red-700">{reclamarError}</p>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t rounded-b-2xl flex space-x-3">
+              <button onClick={() => setShowReclamarModal(false)} className="flex-1 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors">Cancelar</button>
+              <button
+                onClick={reclamarPersona}
+                disabled={reclamando || !datosReclamar.nombres.trim() || !datosReclamar.apellidos.trim()}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors flex items-center justify-center"
+              >
+                {reclamando ? (
+                  <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Reclamando...</>
+                ) : 'Reclamar y Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reasignar Líder */}
+      {showReasignarModal && personaReasignando && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Reasignar Líder</h3>
+                  <p className="text-blue-100 text-sm mt-1">{personaReasignando.nombres || 'Sin nombre'} {personaReasignando.apellidos || ''} — CC {personaReasignando.documento}</p>
+                </div>
+                <button onClick={() => setShowReasignarModal(false)} className="text-white/80 hover:text-white">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              {personaReasignando.lider?.nombre && (
+                <div className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+                  <span className="font-medium">Líder actual:</span> {personaReasignando.lider.nombre} ({personaReasignando.lider.email})
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Líder <span className="text-red-500">*</span></label>
+                {usuariosLider.length === 0 ? (
+                  <p className="text-sm text-gray-500">Cargando usuarios...</p>
+                ) : (
+                  <select
+                    value={liderSeleccionado}
+                    onChange={(e) => setLiderSeleccionado(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">-- Selecciona un líder --</option>
+                    {usuariosLider.map(u => (
+                      <option key={u._id} value={u._id}>
+                        {u.perfil?.nombres} {u.perfil?.apellidos} ({u.email}) — {u.rol}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {reasignarError && (
+                <div className="px-4 py-3 bg-red-50 border border-red-300 rounded-lg flex items-start gap-2">
+                  <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <p className="text-sm text-red-700">{reasignarError}</p>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t rounded-b-2xl flex space-x-3">
+              <button onClick={() => setShowReasignarModal(false)} className="flex-1 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors">Cancelar</button>
+              <button
+                onClick={reasignarLider}
+                disabled={reasignando || !liderSeleccionado}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium transition-colors flex items-center justify-center"
+              >
+                {reasignando ? (
+                  <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Reasignando...</>
+                ) : 'Confirmar Reasignación'}
               </button>
             </div>
           </div>

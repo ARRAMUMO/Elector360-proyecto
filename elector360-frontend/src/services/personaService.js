@@ -154,6 +154,43 @@ const personaService = {
   },
 
   /**
+   * Listar usuarios disponibles para asignar como lider (Coordinador/Admin)
+   * @returns {Promise}
+   */
+  async listarUsuariosParaAsignar() {
+    try {
+      const response = await api.get('/usuarios');
+      const todos = response.data?.data?.usuarios || response.data?.data || [];
+      return { success: true, usuarios: todos };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Error al cargar usuarios', usuarios: [] };
+    }
+  },
+
+  /**
+   * Asignar o reasignar líder a una persona (Coordinador/Admin)
+   * @param {string} personaId - ID de la persona
+   * @param {string} liderId - ID del usuario que será el nuevo líder
+   * @returns {Promise}
+   */
+  async asignarLider(personaId, liderId) {
+    try {
+      const response = await api.put(`/personas/${personaId}/asignar-lider`, { liderId });
+
+      return {
+        success: response.data.success,
+        persona: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al asignar líder'
+      };
+    }
+  },
+
+  /**
    * Eliminar persona (solo Admin)
    * @param {string} id - ID de la persona
    * @returns {Promise}

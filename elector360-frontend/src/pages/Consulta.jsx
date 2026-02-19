@@ -4,8 +4,10 @@ import consultaService from '../services/consultaService';
 import personaService from '../services/personaService';
 import authService from '../services/authService';
 import Alert from '../components/common/Alert';
+import { useToast } from '../components/common/Toast.jsx';
 
 function Consulta() {
+  const { addToast } = useToast();
   const [documento, setDocumento] = useState('');
   const [loading, setLoading] = useState(false);
   const [polling, setPolling] = useState(false);
@@ -30,6 +32,9 @@ function Consulta() {
     mesa: ''
   });
   const [guardando, setGuardando] = useState(false);
+  const [modoReclamar, setModoReclamar] = useState(false);
+  const [modoNueva, setModoNueva] = useState(false);
+  const [modalConfirmarError, setModalConfirmarError] = useState(null);
 
   // Estados para el modal de edición
   const [showModalEditar, setShowModalEditar] = useState(false);
@@ -300,6 +305,9 @@ function Consulta() {
     setProgreso(0);
     setEstadoBusqueda(null);
     setShowModalConfirmar(false);
+    setModoReclamar(false);
+    setModoNueva(false);
+    setModalConfirmarError(null);
     setDatosConfirmacion({
       nombres: '',
       apellidos: '',
@@ -339,6 +347,58 @@ function Consulta() {
       direccion: rawPuesto.direccion || rawDatosElectorales.direccion || resultado.direccion || '',
       mesa: rawPuesto.mesa || rawDatosElectorales.mesa || resultado.mesa || ''
     });
+    setModoReclamar(false);
+    setModoNueva(false);
+    setModalConfirmarError(null);
+    setShowModalConfirmar(true);
+  };
+
+  // Abrir modal para reclamar persona de otro líder
+  const abrirModalReclamar = () => {
+    if (!resultado) return;
+
+    const rawPuesto = resultado.puesto || {};
+    const rawDatosElectorales = resultado.datosElectorales || {};
+
+    setDatosConfirmacion({
+      nombres: resultado.nombres || '',
+      apellidos: resultado.apellidos || '',
+      telefono: resultado.telefono || '',
+      email: resultado.email || '',
+      departamento: rawPuesto.departamento || rawDatosElectorales.departamento || resultado.departamento || '',
+      municipio: rawPuesto.municipio || rawDatosElectorales.municipio || resultado.municipio || '',
+      zona: rawPuesto.zona || rawDatosElectorales.zona || resultado.zona || '',
+      nombrePuesto: rawPuesto.nombrePuesto || rawDatosElectorales.puestoVotacion || rawDatosElectorales.nombrePuesto || resultado.puestoVotacion || resultado.nombrePuesto || '',
+      direccion: rawPuesto.direccion || rawDatosElectorales.direccion || resultado.direccion || '',
+      mesa: rawPuesto.mesa || rawDatosElectorales.mesa || resultado.mesa || ''
+    });
+    setModoReclamar(true);
+    setModoNueva(false);
+    setModalConfirmarError(null);
+    setShowModalConfirmar(true);
+  };
+
+  // Abrir modal para registrar persona nueva en esta campaña (viene de otra campaña)
+  const abrirModalNueva = () => {
+    if (!resultado) return;
+
+    const rawPuesto = resultado.puesto || {};
+
+    setDatosConfirmacion({
+      nombres: '',
+      apellidos: '',
+      telefono: '',
+      email: '',
+      departamento: rawPuesto.departamento || '',
+      municipio: rawPuesto.municipio || '',
+      zona: rawPuesto.zona || '',
+      nombrePuesto: rawPuesto.nombrePuesto || '',
+      direccion: rawPuesto.direccion || '',
+      mesa: rawPuesto.mesa || ''
+    });
+    setModoReclamar(false);
+    setModoNueva(true);
+    setModalConfirmarError(null);
     setShowModalConfirmar(true);
   };
 
@@ -353,12 +413,13 @@ function Consulta() {
 
   // Guardar persona confirmada
   const confirmarYGuardar = async () => {
-    if (!resultado?._id) {
-      setAlert({ type: 'error', message: 'No se puede guardar: falta el ID de la persona' });
+    if (!modoNueva && !resultado?._id) {
+      setModalConfirmarError('No se puede guardar: falta el ID de la persona');
       return;
     }
 
     setGuardando(true);
+    setModalConfirmarError(null);
 
     try {
       // Construir datos adicionales incluyendo nombres, apellidos y puesto de votación
@@ -388,11 +449,25 @@ function Consulta() {
         delete datosAdicionales.puesto;
       }
 
-      const respuesta = await consultaService.confirmarPersona(resultado._id, datosAdicionales);
+      let respuesta;
+      if (modoNueva) {
+        respuesta = await consultaService.registrarNuevaPersona(resultado.documento, datosAdicionales);
+      } else if (modoReclamar) {
+        respuesta = await consultaService.reclamarPersona(resultado._id, datosAdicionales);
+      } else {
+        respuesta = await consultaService.confirmarPersona(resultado._id, datosAdicionales);
+      }
 
       if (respuesta.success) {
-        setAlert({ type: 'success', message: '✅ Persona agregada a tu base exitosamente' });
+        const mensaje = modoNueva
+          ? '✅ Persona registrada en tu campaña exitosamente'
+          : modoReclamar
+            ? '✅ Persona agregada a tu lista exitosamente'
+            : '✅ Persona agregada a tu base exitosamente';
+        addToast({ type: 'success', message: mensaje });
         setShowModalConfirmar(false);
+        setModoReclamar(false);
+        setModoNueva(false);
         // Actualizar el resultado con los nuevos datos
         setResultado(respuesta.persona || resultado);
         setEstadoBusqueda(prev => ({
@@ -401,11 +476,11 @@ function Consulta() {
           fuente: 'Base de Datos'
         }));
       } else {
-        setAlert({ type: 'error', message: respuesta.error || 'Error al guardar la persona' });
+        setModalConfirmarError(respuesta.error || 'Error al guardar la persona');
       }
     } catch (error) {
       console.error('Error al confirmar persona:', error);
-      setAlert({ type: 'error', message: 'Error al guardar la persona' });
+      setModalConfirmarError('Error al guardar la persona');
     } finally {
       setGuardando(false);
     }
@@ -1079,6 +1154,27 @@ function Consulta() {
             </div>
           )}
 
+          {/* Botón para registrar persona nueva en esta campaña (caso 3b: de otra campaña) */}
+          {!resultado._id && resultado.documento && (
+            <div className="p-6 border-t border-blue-100 bg-blue-50/30">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Esta persona no está en tu campaña</p>
+                  <p className="text-xs text-gray-500 mt-1">Puedes agregarla a tu lista con sus datos de votación disponibles</p>
+                </div>
+                <button
+                  onClick={abrirModalNueva}
+                  className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-sm"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  Agregar a mi lista
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Botón para agregar a mi base (solo si no está confirmada) */}
           {!resultado.confirmado && resultado._id && (
             <div className="p-6 border-t border-emerald-100 bg-emerald-50/30">
@@ -1100,10 +1196,10 @@ function Consulta() {
             </div>
           )}
 
-          {/* Mensaje si ya está confirmada + botón editar */}
+          {/* Mensaje si ya está confirmada + botones */}
           {resultado.confirmado && (
             <div className={`p-4 border-t ${esPersonaMia ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'}`}>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center">
                   <svg className={`w-5 h-5 mr-2 ${esPersonaMia ? 'text-green-600' : 'text-orange-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1114,17 +1210,31 @@ function Consulta() {
                       : `Esta persona pertenece a ${resultado.lider?.nombre || 'otro líder'}`}
                   </p>
                 </div>
-                {puedeEditar && (
-                  <button
-                    onClick={abrirModalEditar}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Editar Persona
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Botón para reclamar persona de otro líder */}
+                  {!esPersonaMia && resultado._id && (
+                    <button
+                      onClick={abrirModalReclamar}
+                      className="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-semibold rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      Agregar a mi lista
+                    </button>
+                  )}
+                  {puedeEditar && (
+                    <button
+                      onClick={abrirModalEditar}
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Editar Persona
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1137,23 +1247,27 @@ function Consulta() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Header del Modal */}
-            <div className="bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 rounded-t-2xl">
+            <div className={`bg-gradient-to-r ${modoNueva ? 'from-blue-500 to-blue-600' : modoReclamar ? 'from-orange-500 to-orange-600' : 'from-green-500 to-green-600'} px-6 py-4 rounded-t-2xl`}>
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-white flex items-center">
                     <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
-                    Agregar a Mi Base
+                    {modoNueva ? 'Agregar a mi campaña' : modoReclamar ? 'Agregar a mi lista' : 'Agregar a Mi Base'}
                   </h3>
-                  <p className="text-green-100 text-sm mt-1">
-                    Completa los datos faltantes {resultado?.nombres && resultado?.apellidos
-                      ? `de ${resultado.nombres} ${resultado.apellidos}`
-                      : `- Cédula: ${resultado?.documento}`}
+                  <p className={`${modoNueva ? 'text-blue-100' : modoReclamar ? 'text-orange-100' : 'text-green-100'} text-sm mt-1`}>
+                    {modoNueva
+                      ? `Registrar cédula ${resultado?.documento} en esta campaña`
+                      : modoReclamar
+                        ? `Se removerá de ${resultado?.lider?.nombre || 'el líder actual'} y pasará a tu lista`
+                        : `Completa los datos faltantes ${resultado?.nombres && resultado?.apellidos
+                            ? `de ${resultado.nombres} ${resultado.apellidos}`
+                            : `- Cédula: ${resultado?.documento}`}`}
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowModalConfirmar(false)}
+                  onClick={() => { setShowModalConfirmar(false); setModoReclamar(false); setModoNueva(false); }}
                   className="text-white/80 hover:text-white transition-colors"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1356,10 +1470,20 @@ function Consulta() {
               </div>
             </div>
 
+            {/* Error del modal */}
+            {modalConfirmarError && (
+              <div className="mx-6 mb-2 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm text-red-700">{modalConfirmarError}</p>
+              </div>
+            )}
+
             {/* Footer del Modal */}
             <div className="px-6 py-4 bg-emerald-50/30 border-t border-emerald-100 rounded-b-2xl flex justify-end space-x-3">
               <button
-                onClick={() => setShowModalConfirmar(false)}
+                onClick={() => { setShowModalConfirmar(false); setModoReclamar(false); setModoNueva(false); }}
                 disabled={guardando}
                 className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors disabled:opacity-50"
               >
@@ -1368,7 +1492,7 @@ function Consulta() {
               <button
                 onClick={confirmarYGuardar}
                 disabled={guardando || !datosConfirmacion.nombres.trim() || !datosConfirmacion.apellidos.trim()}
-                className="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                className={`px-5 py-2 ${modoNueva ? 'bg-blue-600 hover:bg-blue-700' : modoReclamar ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700'} text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center`}
               >
                 {guardando ? (
                   <>
@@ -1383,7 +1507,7 @@ function Consulta() {
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
-                    Guardar Persona
+                    {modoNueva ? 'Agregar a mi campaña' : modoReclamar ? 'Agregar a mi lista' : 'Guardar Persona'}
                   </>
                 )}
               </button>

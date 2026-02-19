@@ -54,29 +54,33 @@ npm run test:coverage       # Con cobertura
 src/
 ├── components/             # Componentes reutilizables
 │   ├── Alert.jsx           # Alertas y notificaciones
+│   ├── Toast.jsx           # Notificaciones tipo toast
 │   ├── Navbar.jsx          # Barra de navegación
 │   ├── Sidebar.jsx         # Menú lateral
 │   └── ProtectedRoute.jsx  # Rutas protegidas
 │
 ├── context/
-│   └── AuthContext.jsx     # Context de autenticación
+│   ├── AuthContext.jsx     # Context de autenticación
+│   └── ToastContext.jsx    # Context de notificaciones toast
 │
 ├── hooks/
-│   └── useDebounce.js      # Hook para debounce
+│   ├── useDebounce.js      # Hook para debounce
+│   └── useToast.js         # Hook para notificaciones toast
 │
 ├── pages/                  # Páginas de la aplicación
 │   ├── Login.jsx           # Inicio de sesión
 │   ├── Dashboard.jsx       # Panel principal
-│   ├── Consulta.jsx        # Consulta de votantes
-│   ├── Personas.jsx        # Gestión de personas
+│   ├── Consulta.jsx        # Consulta de votantes con flujos de asignación
+│   ├── Personas.jsx        # Gestión de personas (reclamar, reasignar, importar)
 │   ├── Usuarios.jsx        # Administración de usuarios
+│   ├── Campanas.jsx        # Gestión de campañas (ADMIN)
 │   └── WorkerAdmin.jsx     # Control del RPA Worker
 │
 ├── services/               # Servicios de API
-│   ├── api.js              # Configuración de Axios
+│   ├── api.js              # Configuración de Axios (con retry 429)
 │   ├── authService.js      # Servicio de autenticación
-│   ├── personaService.js   # Servicio de personas
-│   ├── consultaService.js  # Servicio de consultas RPA
+│   ├── personaService.js   # Servicio de personas + asignarLider
+│   ├── consultaService.js  # Consultas RPA + confirmar/reclamar/registrarNueva
 │   └── usuarioService.js   # Servicio de usuarios
 │
 ├── App.jsx                 # Componente principal
@@ -100,20 +104,34 @@ src/
 - Búsqueda por número de cédula
 - Consulta automática a Registraduría vía RPA
 - Visualización de datos electorales
-- Modal para agregar persona a base de datos
 - Barra de progreso durante consulta
+- **Tres flujos de asignación según el estado de la persona:**
+  - **Agregar a Mi Base** (verde): persona sin líder asignado en esta campaña
+  - **Agregar a mi lista** (naranja): persona asignada a otro líder → reclamar
+  - **Agregar a mi lista** (azul): persona en otra campaña → crear registro en la campaña actual
+- Errores del modal mostrados dentro del modal (no detrás de él)
 
 ### Personas (`/personas`)
-- Lista de personas con filtros
-- Filtros por departamento, mesa, estado
+- Lista de personas con filtros (departamento, mesa, estado, búsqueda)
 - Paginación
 - Formulario de creación/edición
-- Vista de puesto de votación
+- Menú de acciones por persona:
+  - **Reclamar y Completar**: para personas sin líder (no confirmadas), permite completar datos y asignárselas
+  - **Reasignar Líder**: visible para COORDINADOR y ADMIN, abre selector de líder
+  - Editar, eliminar
+- **Importar Excel**: disponible para todos los roles (LIDER, COORDINADOR, ADMIN)
+- Exportar CSV / Excel
+- Notificaciones toast para acciones
 
 ### Usuarios (`/usuarios`) - Solo ADMIN
 - Gestión de usuarios del sistema
 - Crear, editar, activar/desactivar usuarios
-- Asignación de roles
+- Asignación de roles (ADMIN, COORDINADOR, LIDER)
+- Asignación de campaña
+
+### Campañas (`/campanas`) - Solo ADMIN
+- Crear y gestionar campañas electorales
+- Asignar coordinadores a campañas
 
 ### Worker Admin (`/worker`) - Solo ADMIN
 - Estadísticas del RPA Worker
@@ -178,25 +196,51 @@ const response = await consultaService.buscarPersona('12345678');
 // Verificar estado de consulta RPA (polling)
 const estado = await consultaService.obtenerEstado(consultaId);
 
-// Confirmar y agregar persona
+// Confirmar y agregar persona (sin líder previo)
 await consultaService.confirmarPersona(personaId, {
   nombres: 'Juan Carlos',
   apellidos: 'Pérez Gómez',
   telefono: '3001234567'
 });
+
+// Reclamar persona de otro líder (fuerza reasignación)
+await consultaService.reclamarPersona(personaId, {
+  nombres: 'Juan Carlos',
+  telefono: '3001234567'
+});
+
+// Registrar persona nueva en esta campaña (viene de otra campaña)
+await consultaService.registrarNuevaPersona('12345678', {
+  nombres: 'Juan Carlos',
+  apellidos: 'Pérez Gómez',
+  puesto: { departamento: 'ATLANTICO', municipio: 'BARRANQUILLA', mesa: '5' }
+});
+```
+
+### personaService (métodos adicionales)
+```javascript
+import personaService from './services/personaService';
+
+// Reasignar líder de una persona (COORDINADOR/ADMIN)
+await personaService.asignarLider(personaId, liderId);
 ```
 
 ## Flujo de Consulta RPA
 
 1. Usuario ingresa número de cédula
-2. Sistema busca en base de datos local
-3. Si no existe o está desactualizada:
+2. Sistema busca en base de datos local (por campaña)
+3. Según el resultado, se muestran diferentes opciones:
+   - **Persona sin líder en esta campaña** → botón verde "Agregar a Mi Base"
+   - **Persona de otro líder en esta campaña** → botón naranja "Agregar a mi lista" (reclamar)
+   - **Persona de otra campaña (no en la actual)** → botón azul "Agregar a mi lista" (registrar nueva)
+   - **Mi persona** → solo visualización con indicador "Mi Lista"
+4. Si no existe en la Registraduría o datos desactualizados:
    - Se muestra indicador de carga
    - Se inicia polling al backend
    - Backend consulta Registraduría vía RPA
-4. Al completarse:
-   - Se muestran datos electorales
-   - Usuario puede agregar a su base
+5. Al completarse:
+   - Se muestran datos electorales actualizados
+   - Aparecen los botones de acción según el caso
 
 ```jsx
 // Ejemplo de implementación de polling
@@ -218,6 +262,25 @@ const iniciarPolling = async (consultaId) => {
 };
 ```
 
+## Sistema de Notificaciones Toast
+
+```jsx
+import { useToast } from './hooks/useToast';
+
+function MiComponente() {
+  const { addToast } = useToast();
+
+  const handleAccion = async () => {
+    const result = await personaService.actualizar(id, datos);
+    if (result.success) {
+      addToast('Persona actualizada correctamente', 'success');
+    } else {
+      addToast(result.error, 'error');
+    }
+  };
+}
+```
+
 ## Context de Autenticación
 
 ```jsx
@@ -225,15 +288,20 @@ import { useAuth } from './context/AuthContext';
 
 function MiComponente() {
   const { user, isAuthenticated, isAdmin, login, logout } = useAuth();
+  // user.rol puede ser 'ADMIN', 'COORDINADOR' o 'LIDER'
 
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
   }
 
+  const esAdmin = user?.rol === 'ADMIN';
+  const esCoordi = user?.rol === 'COORDINADOR';
+
   return (
     <div>
       <h1>Hola, {user.perfil.nombres}</h1>
-      {isAdmin && <AdminPanel />}
+      {esAdmin && <AdminPanel />}
+      {(esAdmin || esCoordi) && <ReasignarLider />}
     </div>
   );
 }

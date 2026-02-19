@@ -260,10 +260,8 @@ class ConsultaService {
       personaPrincipal = personas[0];
     } else {
       // No existe en ninguna campaña. Obtener la campaña de la consulta que la originó.
-      const consultaOrigen = await ConsultaRPA.findOne({
-        documento,
-        estado: { $in: ['EN_COLA', 'PROCESANDO'] }
-      });
+      // Buscar sin filtrar por estado para evitar timing issues (el estado puede cambiar antes de guardar)
+      const consultaOrigen = await ConsultaRPA.findOne({ documento }).sort({ createdAt: -1 });
 
       esNueva = true;
       personaPrincipal = new Persona({
@@ -369,8 +367,13 @@ class ConsultaService {
     }
 
     // Verificar scope de campaña
-    if (campanaId && persona.campana?.toString() !== campanaId.toString()) {
+    // Personas RPA sin campaña (campana: null) pueden ser confirmadas por cualquier campaña
+    if (campanaId && persona.campana && persona.campana.toString() !== campanaId.toString()) {
       throw new ApiError(403, 'No puedes confirmar personas de otra campaña');
+    }
+    // Si el stub RPA no tiene campaña, asignar la campaña del usuario
+    if (campanaId && !persona.campana) {
+      persona.campana = campanaId;
     }
 
     // Verificar si ya fue confirmada por otro lider
@@ -409,6 +412,104 @@ class ConsultaService {
     await this.actualizarStatsUsuario(usuario._id);
 
     return persona;
+  }
+
+  /**
+   * Reclamar persona para el usuario actual (fuerza reasignación aunque tenga otro líder)
+   */
+  async reclamarPersona(personaId, usuario, datosAdicionales = {}, campanaId = null) {
+    const persona = await Persona.findById(personaId);
+
+    if (!persona) {
+      throw new ApiError(404, 'Persona no encontrada');
+    }
+
+    if (campanaId && persona.campana && persona.campana.toString() !== campanaId.toString()) {
+      throw new ApiError(403, 'No puedes reclamar personas de otra campaña');
+    }
+    if (campanaId && !persona.campana) {
+      persona.campana = campanaId;
+    }
+
+    const liderAnteriorId = persona.lider?.id;
+
+    persona.lider = {
+      id: usuario._id,
+      nombre: `${usuario.perfil.nombres} ${usuario.perfil.apellidos}`,
+      email: usuario.email
+    };
+
+    if (datosAdicionales.nombres) persona.nombres = datosAdicionales.nombres;
+    if (datosAdicionales.apellidos) persona.apellidos = datosAdicionales.apellidos;
+    if (datosAdicionales.telefono) persona.telefono = datosAdicionales.telefono;
+    if (datosAdicionales.email) persona.email = datosAdicionales.email;
+    if (datosAdicionales.estadoContacto) persona.estadoContacto = datosAdicionales.estadoContacto;
+    if (datosAdicionales.notas) persona.notas = datosAdicionales.notas;
+    if (datosAdicionales.puesto) {
+      persona.puesto = { ...persona.puesto, ...datosAdicionales.puesto };
+    }
+
+    persona.confirmado = true;
+    await persona.save();
+
+    if (liderAnteriorId && liderAnteriorId.toString() !== usuario._id.toString()) {
+      await this.actualizarStatsUsuario(liderAnteriorId);
+    }
+    await this.actualizarStatsUsuario(usuario._id);
+
+    return persona;
+  }
+
+  /**
+   * Registrar nueva persona en esta campaña (cuando viene de otra campaña o es nueva)
+   */
+  async registrarNuevaPersona(documento, usuario, datosAdicionales = {}, campanaId = null) {
+    // Verificar que no exista ya en esta campaña
+    const filtro = { documento };
+    if (campanaId) filtro.campana = campanaId;
+    const existente = await Persona.findOne(filtro);
+
+    if (existente) {
+      throw new ApiError(409, 'Esta persona ya existe en esta campaña');
+    }
+
+    // Obtener datos de votación de cualquier campaña
+    const personaGlobal = await Persona.findOne({
+      documento,
+      'puesto.departamento': { $exists: true, $ne: null }
+    });
+
+    const nuevaPersona = new Persona({
+      documento,
+      ...(campanaId && { campana: campanaId }),
+      nombres: datosAdicionales.nombres || undefined,
+      apellidos: datosAdicionales.apellidos || undefined,
+      telefono: datosAdicionales.telefono || undefined,
+      email: datosAdicionales.email || undefined,
+      notas: datosAdicionales.notas || undefined,
+      lider: {
+        id: usuario._id,
+        nombre: `${usuario.perfil.nombres} ${usuario.perfil.apellidos}`,
+        email: usuario.email
+      },
+      confirmado: true,
+      puesto: datosAdicionales.puesto || personaGlobal?.puesto || {},
+      estadoRPA: personaGlobal ? 'ACTUALIZADO' : 'NUEVO',
+      origen: 'MANUAL'
+    });
+
+    try {
+      await nuevaPersona.save();
+    } catch (saveErr) {
+      if (saveErr.code === 11000) {
+        throw new ApiError(409, 'Esta persona ya fue registrada en esta campaña');
+      }
+      throw saveErr;
+    }
+
+    await this.actualizarStatsUsuario(usuario._id);
+
+    return nuevaPersona;
   }
 
   /**

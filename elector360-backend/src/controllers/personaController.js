@@ -126,6 +126,55 @@ exports.actualizarPersona = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Asignar o reasignar líder a una persona
+ * @route   PUT /api/v1/personas/:id/asignar-lider
+ * @access  Private (Coordinador/Admin)
+ */
+exports.asignarLider = asyncHandler(async (req, res) => {
+  const { liderId } = req.body;
+
+  if (!liderId) {
+    throw new ApiError(400, 'Falta el campo liderId');
+  }
+
+  const Usuario = require('../models/Usuario');
+  const nuevoLider = await Usuario.findById(liderId);
+  if (!nuevoLider) {
+    throw new ApiError(404, 'Usuario líder no encontrado');
+  }
+
+  const persona = await Persona.findById(req.params.id);
+  if (!persona) {
+    throw new ApiError(404, 'Persona no encontrada');
+  }
+  if (req.campanaId && persona.campana?.toString() !== req.campanaId.toString()) {
+    throw new ApiError(403, 'Persona fuera del scope de campaña');
+  }
+
+  const consultaServiceInstance = require('../services/consultaService');
+  const liderAnteriorId = persona.lider?.id;
+
+  persona.lider = {
+    id: nuevoLider._id,
+    nombre: `${nuevoLider.perfil.nombres} ${nuevoLider.perfil.apellidos}`,
+    email: nuevoLider.email
+  };
+  persona.confirmado = true;
+  await persona.save();
+
+  if (liderAnteriorId && liderAnteriorId.toString() !== liderId.toString()) {
+    await consultaServiceInstance.actualizarStatsUsuario(liderAnteriorId);
+  }
+  await consultaServiceInstance.actualizarStatsUsuario(nuevoLider._id);
+
+  res.json({
+    success: true,
+    message: 'Líder asignado exitosamente',
+    data: persona
+  });
+});
+
+/**
  * @desc    Eliminar persona
  * @route   DELETE /api/v1/personas/:id
  * @access  Private (Admin only)

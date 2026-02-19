@@ -81,6 +81,55 @@ const consultaService = {
   },
 
   /**
+   * Reclamar persona (fuerza reasignación aunque tenga otro líder)
+   * @param {string} personaId - ID de la persona
+   * @param {Object} datosAdicionales - Datos adicionales opcionales
+   * @returns {Promise}
+   */
+  async reclamarPersona(personaId, datosAdicionales = {}) {
+    try {
+      const response = await api.post(`/consultas/reclamar/${personaId}`, datosAdicionales);
+
+      return {
+        success: response.data.success,
+        persona: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al reclamar persona'
+      };
+    }
+  },
+
+  /**
+   * Registrar persona nueva en esta campaña (cuando no existe aquí pero sí en otra)
+   * @param {string} documento - Número de cédula
+   * @param {Object} datosAdicionales - Datos del formulario
+   * @returns {Promise}
+   */
+  async registrarNuevaPersona(documento, datosAdicionales = {}) {
+    try {
+      const response = await api.post('/consultas/registrar-nueva', {
+        documento,
+        ...datosAdicionales
+      });
+
+      return {
+        success: response.data.success,
+        persona: response.data.data,
+        error: response.data.success ? null : response.data.error
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Error al registrar persona en esta campaña'
+      };
+    }
+  },
+
+  /**
    * Crear nueva consulta RPA para obtener datos electorales
    * @param {string} documento - Número de cédula
    * @param {number} prioridad - Prioridad de la consulta (1-5, default: 2)

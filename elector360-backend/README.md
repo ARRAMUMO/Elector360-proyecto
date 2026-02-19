@@ -21,20 +21,22 @@ Sistema de gestion electoral con consultas automatizadas RPA a la Registraduria 
 
 Elector360 es una plataforma para gestion de informacion electoral que permite:
 - Consultar automaticamente datos electorales de ciudadanos en la Registraduria
-- Gestionar personas y sus datos de votacion
-- Administrar usuarios con diferentes roles (ADMIN, LIDER)
+- Gestionar personas y sus datos de votacion por campana
+- Administrar usuarios con diferentes roles (ADMIN, COORDINADOR, LIDER)
 - Procesar consultas masivas mediante RPA
+- Gestionar multiples campanas electorales independientes
 
 ## Caracteristicas
 
 - **Autenticacion JWT** con refresh tokens
-- **Roles de usuario**: ADMIN y LIDER
+- **Roles de usuario**: ADMIN, COORDINADOR y LIDER
+- **Sistema multicampana**: cada campana maneja su propia lista de personas
 - **RPA automatizado** para consultas a la Registraduria
 - **Resolucion automatica de CAPTCHA** mediante 2Captcha
 - **Circuit Breaker** para manejo de fallos
 - **Pool de workers** para consultas paralelas
 - **Rate limiting** para proteccion de API
-- **Operaciones masivas** con importacion Excel
+- **Operaciones masivas** con importacion Excel (disponible para todos los roles)
 
 ---
 
@@ -220,12 +222,19 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
 
 | Metodo | Endpoint | Descripcion | Auth |
 |--------|----------|-------------|------|
-| GET | `/personas` | Listar personas | Si |
+| GET | `/personas` | Listar personas de la campana | Si |
 | POST | `/personas` | Crear persona | Si |
 | GET | `/personas/:id` | Obtener persona | Si |
 | PUT | `/personas/:id` | Actualizar persona | Si |
 | DELETE | `/personas/:id` | Eliminar persona | Admin |
-| GET | `/personas/buscar` | Buscar por documento | Si |
+| GET | `/personas/documento/:documento` | Buscar por documento | Si |
+| PUT | `/personas/:id/asignar-lider` | Reasignar lider de una persona | Coordinador/Admin |
+| POST | `/personas/importar` | Importar personas desde Excel | Lider/Coordinador/Admin |
+| GET | `/personas/plantilla-importacion` | Descargar plantilla Excel | Lider/Coordinador/Admin |
+| GET | `/personas/mesas` | Listar mesas de votacion | Si |
+| GET | `/personas/mesas/detalle` | Personas por mesa | Si |
+| GET | `/personas/export/csv` | Exportar a CSV | Si |
+| GET | `/personas/export/excel` | Exportar a Excel | Si |
 
 #### Crear Persona
 ```bash
@@ -249,7 +258,9 @@ curl -X POST http://localhost:8080/api/v1/personas \
 |--------|----------|-------------|------|
 | POST | `/consultas/buscar` | Buscar persona y encolar RPA | Si |
 | GET | `/consultas/estado/:id` | Estado de consulta | Si |
-| POST | `/consultas/confirmar/:personaId` | Confirmar persona | Si |
+| POST | `/consultas/confirmar/:personaId` | Confirmar persona (agregarla a mi lista) | Si |
+| POST | `/consultas/reclamar/:personaId` | Reclamar persona de otro lider | Si |
+| POST | `/consultas/registrar-nueva` | Registrar persona en esta campana | Si |
 | GET | `/consultas/historial` | Historial de consultas | Si |
 
 #### Buscar Persona (Principal)
@@ -338,13 +349,15 @@ curl http://localhost:8080/api/v1/consultas/estado/697e08a4da13e077b53ff1e7 \
 
 ---
 
-### Operaciones Masivas
+### Campanas
 
 | Metodo | Endpoint | Descripcion | Auth |
 |--------|----------|-------------|------|
-| POST | `/masivas/importar` | Importar Excel | Admin |
-| GET | `/masivas/exportar` | Exportar a Excel | Admin |
-| POST | `/masivas/consulta-lote` | Consulta por lote | Admin |
+| GET | `/campanas` | Listar campanas | Admin |
+| POST | `/campanas` | Crear campana | Admin |
+| GET | `/campanas/:id` | Obtener campana | Admin |
+| PUT | `/campanas/:id` | Actualizar campana | Admin |
+| DELETE | `/campanas/:id` | Eliminar campana | Admin |
 
 ---
 
@@ -452,19 +465,27 @@ module.exports = {
 ### Flujo de Consulta
 
 1. Usuario busca persona via `POST /consultas/buscar`
-2. Si persona existe pero desactualizada:
-   - Devuelve datos existentes + `consultaId`
-   - Encola consulta RPA automaticamente
-3. Si persona no existe:
-   - Encola consulta RPA
-   - Devuelve `consultaId` para polling
-4. Frontend hace polling a `GET /consultas/estado/:consultaId`
-5. Worker procesa la consulta:
+2. Segun el resultado, el backend devuelve diferentes respuestas:
+   - **Persona en la campana actual**: devuelve persona con `_id` (confirmado o no)
+   - **Persona en otra campana**: devuelve `datosVotacion` sin `_id` (para uso con `registrar-nueva`)
+   - **Persona no encontrada en BD**: encola consulta RPA, devuelve `consultaId`
+   - **Persona desactualizada**: devuelve datos existentes + `consultaId` para actualizar
+3. Frontend hace polling a `GET /consultas/estado/:consultaId` hasta COMPLETADO
+4. Worker procesa la consulta:
    - Puppeteer navega a Registraduria
    - 2Captcha resuelve el CAPTCHA (~30 seg)
    - Extrae datos de la tabla
-6. Worker actualiza estado a `COMPLETADO`
-7. Frontend obtiene persona actualizada
+5. Worker actualiza estado a `COMPLETADO` y persona a `estadoRPA: ACTUALIZADO`
+6. Frontend obtiene persona actualizada y muestra botones de accion
+
+### Flujos de Asignacion de Personas
+
+| Caso | Endpoint | Descripcion |
+|------|----------|-------------|
+| Sin lider en campana actual | `POST /consultas/confirmar/:id` | Asigna al usuario actual |
+| Otro lider en campana actual | `POST /consultas/reclamar/:id` | Fuerza reasignacion, ajusta stats |
+| No existe en campana actual | `POST /consultas/registrar-nueva` | Crea nuevo registro en la campana |
+| Reasignar desde admin | `PUT /personas/:id/asignar-lider` | COORDINADOR/ADMIN asigna a otro lider |
 
 ### Flujo Frontend (Polling)
 
@@ -553,22 +574,23 @@ elector360-backend/
 |   |-- controllers/
 |   |   |-- authController.js
 |   |   |-- usuarioController.js
-|   |   |-- personaController.js
-|   |   |-- consultaController.js
+|   |   |-- personaController.js  # incluye asignarLider
+|   |   |-- consultaController.js # incluye reclamarPersona, registrarNuevaPersona
+|   |   |-- campanaController.js
 |   |   |-- estadisticasController.js
-|   |   |-- operacionesMasivasController.js
 |   |   +-- worker.controller.js
 |   |
 |   |-- middleware/
 |   |   |-- auth.js           # JWT verification
-|   |   |-- validateRole.js   # Role-based access
+|   |   |-- validateRole.js   # Role-based access (ADMIN, COORDINADOR, LIDER)
+|   |   |-- campaignScope.js  # Inyecta req.campanaId y req.campanaFilter
 |   |   |-- errorHandler.js   # Error handling
 |   |   +-- upload.js         # File upload (multer)
 |   |
 |   |-- models/
 |   |   |-- Usuario.js
-|   |   |-- Persona.js
-|   |   |-- ColaConsulta.js
+|   |   |-- Persona.js        # indice unico { documento, campana }
+|   |   |-- Campana.js
 |   |   |-- consultaRPA.model.js
 |   |   +-- HistorialCambio.js
 |   |
@@ -577,16 +599,15 @@ elector360-backend/
 |   |   |-- usuario.routes.js
 |   |   |-- persona.routes.js
 |   |   |-- consulta.routes.js
+|   |   |-- campana.routes.js
 |   |   |-- estadisticas.routes.js
-|   |   |-- peracionesMasivas.routes.js
 |   |   +-- worker.routes.js
 |   |
 |   |-- services/
 |   |   |-- authService.js
 |   |   |-- usuarioService.js
 |   |   |-- personaService.js
-|   |   |-- consultaService.js
-|   |   +-- operacionesMasivasService.js
+|   |   +-- consultaService.js  # confirmar, reclamar, registrarNueva
 |   |
 |   |-- validators/
 |   |   |-- authValidator.js
@@ -655,7 +676,8 @@ node test-rpa-completo.js
 {
   email: String (unico),
   password: String (hasheado),
-  rol: 'ADMIN' | 'LIDER',
+  rol: 'ADMIN' | 'COORDINADOR' | 'LIDER',
+  campana: ObjectId (ref: Campana),   // nulo para ADMIN
   perfil: {
     nombres: String,
     apellidos: String,
@@ -673,7 +695,10 @@ node test-rpa-completo.js
 ### Persona
 ```javascript
 {
-  documento: String (unico),
+  documento: String,
+  campana: ObjectId (ref: Campana),   // null = stub global RPA
+  // indice unico compuesto: { documento, campana }
+
   nombres: String,
   apellidos: String,
   telefono: String,
@@ -689,7 +714,7 @@ node test-rpa-completo.js
   },
 
   // Estado RPA
-  estadoRPA: 'NUEVO' | 'ACTUALIZADO' | 'ERROR_CONSULTA' | 'PENDIENTE_CONSULTA',
+  estadoRPA: 'NUEVO' | 'PENDIENTE_CONSULTA' | 'CONSULTANDO' | 'ACTUALIZADO' | 'ERROR_CONSULTA' | 'PENDIENTE_ACTUALIZACION',
   fechaUltimaConsulta: Date,
   fechaSiguienteConsulta: Date,
   intentosConsulta: Number,
@@ -700,14 +725,25 @@ node test-rpa-completo.js
     nombre: String,
     email: String
   },
-  confirmado: Boolean,
+  confirmado: Boolean,  // true = asignada a un lider
 
   // Contacto
-  estadoContacto: 'PENDIENTE' | 'CONTACTADO' | 'NO_CONTACTADO',
+  estadoContacto: 'PENDIENTE' | 'CONTACTADO' | 'CONFIRMADO' | 'NO_CONTACTADO',
   notas: String,
 
   // Metadata
   origen: 'MANUAL' | 'RPA_REGISTRADURIA' | 'IMPORTACION'
+}
+```
+
+### Campana
+```javascript
+{
+  nombre: String (unico),
+  descripcion: String,
+  activa: Boolean,
+  fechaInicio: Date,
+  fechaFin: Date
 }
 ```
 
@@ -756,11 +792,27 @@ Todos los errores siguen el formato:
 
 ---
 
+## Roles y Permisos
+
+| Rol | Descripcion | Permisos clave |
+|-----|-------------|----------------|
+| `ADMIN` | Administrador global | Todo, sin filtro de campana |
+| `COORDINADOR` | Coordinador de campana | Gestionar lideres, reasignar personas, importar |
+| `LIDER` | Lider de campana | Consultar, confirmar/reclamar personas, importar |
+
+### Middleware de Campana (`campaignScope.js`)
+
+Cada peticion autenticada incluye automaticamente el scope de campana:
+- `req.campanaId`: ID de la campana activa (null para ADMIN sin filtro)
+- `req.campanaFilter`: objeto `{ campana: id }` listo para usar en queries Mongoose
+
+---
+
 ## Seguridad
 
 - Passwords hasheados con bcrypt (10 rounds)
 - JWT con expiracion configurable
-- Rate limiting en endpoints API
+- Rate limiting en endpoints API (recomendado: 1000 req/15min)
 - Helmet para headers de seguridad
 - CORS configurado
 - Validacion de inputs con express-validator

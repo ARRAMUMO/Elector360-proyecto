@@ -20,6 +20,12 @@ router.get('/estado/:consultaId', consultaController.obtenerEstadoConsulta);
 // Confirmar y agregar persona a mi base
 router.post('/confirmar/:personaId', consultaController.confirmarPersona);
 
+// Reclamar persona (fuerza reasignación aunque tenga otro líder)
+router.post('/reclamar/:personaId', consultaController.reclamarPersona);
+
+// Registrar nueva persona en esta campaña (cuando viene de otra campaña)
+router.post('/registrar-nueva', consultaController.registrarNuevaPersona);
+
 // Historial de consultas
 router.get('/historial', consultaController.obtenerHistorial);
 

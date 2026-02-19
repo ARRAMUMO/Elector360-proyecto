@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const personaController = require('../controllers/personaController');
 const { protect } = require('../middleware/auth');
-const { requireAdmin, requireCoordinador } = require('../middleware/validateRole');
+const { requireAdmin, requireCoordinador, requireLider } = require('../middleware/validateRole');
 const { resolveCampaign } = require('../middleware/campaignScope');
 const { validatePersona } = require('../validators/personaValidator');
 const upload = require('../middleware/upload');
@@ -16,11 +16,11 @@ router.route('/')
   .get(personaController.listarPersonas)
   .post(validatePersona, personaController.crearPersona);
 
-// Importar personas desde Excel (Admin y Coordinador)
-router.post('/importar', requireCoordinador, upload.single('file'), personaController.importarDesdeExcel);
+// Importar personas desde Excel (todos los roles autenticados)
+router.post('/importar', requireLider, upload.single('file'), personaController.importarDesdeExcel);
 
 // Descargar plantilla de importación
-router.get('/plantilla-importacion', requireCoordinador, personaController.descargarPlantillaImportacion);
+router.get('/plantilla-importacion', requireLider, personaController.descargarPlantillaImportacion);
 
 // Mesas de votación
 router.get('/mesas', personaController.obtenerMesas);
@@ -34,6 +34,9 @@ router.get('/export/excel', personaController.exportarExcel);
 
 // Por documento
 router.get('/documento/:documento', personaController.obtenerPorDocumento);
+
+// Asignar/reasignar líder (Coordinador/Admin)
+router.put('/:id/asignar-lider', requireCoordinador, personaController.asignarLider);
 
 // Por ID
 router.route('/:id')

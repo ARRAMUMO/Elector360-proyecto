@@ -23,6 +23,7 @@ class RegistraduriaScrap {
    */
   async init() {
     try {
+      const userAgent = new UserAgent().toString();
       const launchOptions = {
         ...config.puppeteer,
         args: [
@@ -198,7 +199,6 @@ class RegistraduriaScrap {
 
       // Limpiar el campo por si tiene valor
       await this.cursor.click(documentoSelector);
-econ
       await helpers.typeHuman(this.page, documentoSelector, documento, config);
 
       // Scroll aleatorio para parecer humano

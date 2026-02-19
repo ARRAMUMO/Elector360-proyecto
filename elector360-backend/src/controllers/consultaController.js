@@ -71,6 +71,55 @@ exports.confirmarPersona = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Reclamar persona (fuerza reasignación aunque tenga otro líder)
+ * @route   POST /api/v1/consultas/reclamar/:personaId
+ * @access  Private
+ */
+exports.reclamarPersona = asyncHandler(async (req, res) => {
+  const { personaId } = req.params;
+  const datosAdicionales = req.body;
+
+  const persona = await consultaService.reclamarPersona(
+    personaId,
+    req.user,
+    datosAdicionales,
+    req.campanaId
+  );
+
+  res.json({
+    success: true,
+    message: 'Persona reclamada exitosamente',
+    data: persona
+  });
+});
+
+/**
+ * @desc    Registrar nueva persona en esta campaña (cuando no existe en ella)
+ * @route   POST /api/v1/consultas/registrar-nueva
+ * @access  Private
+ */
+exports.registrarNuevaPersona = asyncHandler(async (req, res) => {
+  const { documento, ...datosAdicionales } = req.body;
+
+  if (!documento) {
+    throw new ApiError(400, 'El documento es requerido');
+  }
+
+  const persona = await consultaService.registrarNuevaPersona(
+    documento,
+    req.user,
+    datosAdicionales,
+    req.campanaId
+  );
+
+  res.status(201).json({
+    success: true,
+    message: 'Persona registrada en tu campaña exitosamente',
+    data: persona
+  });
+});
+
+/**
  * @desc    Obtener historial de consultas del usuario
  * @route   GET /api/v1/consultas/historial
  * @access  Private
