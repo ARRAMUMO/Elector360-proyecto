@@ -21,29 +21,56 @@ class RPAWorker {
   async start() {
     try {
       console.log('🚀 Iniciando RPA Worker...');
-      
+
       // Conectar a MongoDB si no está conectado
       if (mongoose.connection.readyState !== 1) {
         await mongoose.connect(process.env.MONGODB_URI);
         console.log('✅ MongoDB conectado');
       }
-      
+
+      // Recuperar consultas que quedaron en PROCESANDO de sesiones anteriores
+      await this.recuperarConsultasBloqueadas();
+
       // Inicializar pool
       this.pool = new WorkerPool();
       await this.pool.init();
-      
+
       // Configurar event listeners
       this.setupEventListeners();
-      
+
       // Iniciar polling
       this.isRunning = true;
       this.startPolling();
-      
+
       console.log('✅ RPA Worker iniciado');
-      
+
     } catch (error) {
       console.error('❌ Error iniciando worker:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Recuperar consultas que quedaron en PROCESANDO al reiniciar el servidor.
+   * Sin esto, esas consultas nunca serían reprocesadas.
+   */
+  async recuperarConsultasBloqueadas() {
+    try {
+      const [rpaCount, colaCount] = await Promise.all([
+        ConsultaRPA.countDocuments({ estado: 'PROCESANDO' }),
+        ColaConsulta.countDocuments({ estado: 'PROCESANDO' })
+      ]);
+
+      if (rpaCount > 0) {
+        await ConsultaRPA.updateMany({ estado: 'PROCESANDO' }, { $set: { estado: 'EN_COLA' } });
+        console.log(`♻️ ${rpaCount} ConsultaRPA recuperadas (PROCESANDO → EN_COLA)`);
+      }
+      if (colaCount > 0) {
+        await ColaConsulta.updateMany({ estado: 'PROCESANDO' }, { $set: { estado: 'PENDIENTE' } });
+        console.log(`♻️ ${colaCount} ColaConsulta recuperadas (PROCESANDO → PENDIENTE)`);
+      }
+    } catch (err) {
+      console.warn('⚠️ Error recuperando consultas bloqueadas:', err.message);
     }
   }
 
@@ -142,8 +169,14 @@ class RPAWorker {
             consultaId: consulta._id,
             documento: consulta.documento,
             source: 'ConsultaRPA'
-          }).catch(error => {
-            console.error(`Error procesando ConsultaRPA ${consulta._id}:`, error);
+          }).catch(async error => {
+            console.error(`Error procesando ConsultaRPA ${consulta._id}:`, error.message);
+            // Si el job fue rechazado antes de ejecutarse (circuit breaker, etc.),
+            // resetear a EN_COLA para que el siguiente poll lo reintente
+            try {
+              await ConsultaRPA.findByIdAndUpdate(consulta._id,
+                { $set: { estado: 'EN_COLA' } });
+            } catch (e) { /* ignorar */ }
           });
           procesadas++;
         }
@@ -172,8 +205,12 @@ class RPAWorker {
               consultaId: consulta._id,
               documento: consulta.documento,
               source: 'ColaConsulta'
-            }).catch(error => {
-              console.error(`Error procesando ColaConsulta ${consulta._id}:`, error);
+            }).catch(async error => {
+              console.error(`Error procesando ColaConsulta ${consulta._id}:`, error.message);
+              try {
+                await ColaConsulta.findByIdAndUpdate(consulta._id,
+                  { $set: { estado: 'PENDIENTE' } });
+              } catch (e) { /* ignorar */ }
             });
             procesadas++;
           }
