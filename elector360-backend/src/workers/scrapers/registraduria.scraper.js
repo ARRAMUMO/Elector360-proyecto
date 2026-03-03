@@ -268,6 +268,14 @@ class RegistraduriaScrap {
 
       console.log(`🔐 Resolviendo captcha con siteKey: ${siteKey}`);
 
+      // Paso 0: Intentar click natural en el checkbox "I'm not a robot" (sin costo de 2captcha)
+      const clickPassed = await this._clickRecaptchaCheckbox();
+      if (clickPassed) {
+        console.log('✅ reCAPTCHA aprobado con click natural');
+        return true;
+      }
+      console.log('🔄 Click natural no fue suficiente, usando 2captcha...');
+
       // 2. Resolver con el servicio apropiado
       const pageUrl = this.page.url();
       const solution = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
@@ -459,6 +467,62 @@ class RegistraduriaScrap {
         return { success: false, callbackExecuted: false, error: error.message };
       }
     }, token);
+  }
+
+  /**
+   * Intentar hacer click en el checkbox "I'm not a robot" dentro del iframe de reCAPTCHA.
+   * Si el navegador pasa el análisis de riesgo de Google, se aprueba sin image challenge.
+   * Retorna true si el checkbox quedó marcado (verde) después del click.
+   */
+  async _clickRecaptchaCheckbox() {
+    try {
+      // Esperar a que el iframe del checkbox de reCAPTCHA esté disponible
+      await helpers.randomDelay(1000, 2000);
+
+      // Buscar el iframe anchor del reCAPTCHA
+      const anchorFrame = this.page.frames().find(f =>
+        f.url().includes('recaptcha') && f.url().includes('anchor')
+      );
+      if (!anchorFrame) {
+        console.log('⚠️ Iframe de reCAPTCHA no encontrado');
+        return false;
+      }
+
+      // Click en el checkbox con movimiento natural del cursor (simula humano)
+      const checkboxHandle = await anchorFrame.$('.recaptcha-checkbox-border');
+      if (!checkboxHandle) return false;
+
+      const box = await checkboxHandle.boundingBox();
+      if (!box) return false;
+
+      // Usar cursor ghost para click más realista
+      await this.cursor.moveTo({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+      await helpers.randomDelay(300, 700);
+      await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+      console.log('🖱️ Click en checkbox reCAPTCHA ejecutado');
+
+      // Esperar hasta 6 segundos para ver si se resolvió automáticamente
+      await helpers.randomDelay(4000, 6000);
+
+      // Verificar si el checkbox quedó marcado (aria-checked = true)
+      const checked = await anchorFrame.evaluate(() => {
+        const anchor = document.querySelector('#recaptcha-anchor');
+        return anchor?.getAttribute('aria-checked') === 'true';
+      }).catch(() => false);
+
+      if (checked) {
+        console.log('✅ Checkbox marcado automáticamente por Google');
+        return true;
+      }
+
+      console.log('⚠️ Google requiere image challenge (no aprobó automáticamente)');
+      return false;
+
+    } catch (e) {
+      console.log('⚠️ Error en click reCAPTCHA:', e.message);
+      return false;
+    }
   }
 
   /**
