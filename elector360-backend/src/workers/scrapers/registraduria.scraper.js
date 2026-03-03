@@ -18,10 +18,26 @@ class RegistraduriaScrap {
   }
 
   /**
+   * Limpiar lock files del perfil de Chrome antes de lanzar.
+   * Evita el error "The browser is already running for [profile]".
+   */
+  _limpiarLockFiles() {
+    const fs = require('fs');
+    const path = require('path');
+    const profileDir = config.puppeteer.userDataDir;
+    if (!profileDir) return;
+    for (const nombre of ['SingletonLock', 'lockfile', 'DevToolsActivePort']) {
+      try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (e) { /* no existe, ok */ }
+    }
+  }
+
+  /**
    * Inicializar navegador con anti-detección
    */
   async init() {
     try {
+      this._limpiarLockFiles();
+
       const { createCursor } = require('ghost-cursor');
       const UserAgent = require('user-agents');
 

@@ -266,6 +266,8 @@ class WorkerPool extends EventEmitter {
   async restartWorker(workerId) {
     try {
       await this.removeWorker(workerId);
+      // Esperar a que Chrome libere el lock del perfil antes de relanzar
+      await new Promise(r => setTimeout(r, 3000));
       await this.addWorker();
     } catch (error) {
       console.error(`❌ Error reiniciando worker ${workerId}:`, error);
