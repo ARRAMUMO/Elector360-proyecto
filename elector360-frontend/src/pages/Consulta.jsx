@@ -77,23 +77,20 @@ function Consulta() {
             message: mensaje || '✅ Persona encontrada en la base de datos'
           });
         }
-        // Caso 2: Persona encontrada pero desactualizada - mostrar datos y consultar RPA
+        // Caso 2: Persona encontrada en BD - mostrar datos sin auto-actualizar
         else if (persona && consultaId) {
-          // Mostrar datos actuales mientras se actualiza
           setResultado(persona);
-          setConsultaRPA({ _id: consultaId, estado: data.estado });
           setEstadoBusqueda({
-            tipo: 'actualizando_rpa',
+            tipo: 'encontrada_bd',
             documento,
-            consultaId: consultaId,
-            fuente: 'Base de Datos (actualizando...)',
+            fuente: 'Base de Datos',
             fecha: new Date().toLocaleString()
           });
           setAlert({
-            type: 'info',
-            message: mensaje || '🔄 Persona encontrada. Actualizando datos desde Registraduría...'
+            type: 'success',
+            message: '✅ Persona encontrada en la base de datos'
           });
-          iniciarPolling(consultaId);
+          // La actualización desde Registraduría solo se hace manualmente
         }
         // Caso 3: Persona no está en BD, se encola consulta RPA
         else if (consultaId && !persona) {
