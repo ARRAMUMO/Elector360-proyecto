@@ -1,5 +1,5 @@
 // src/pages/Consulta.jsx
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import consultaService from '../services/consultaService';
 import personaService from '../services/personaService';
 import authService from '../services/authService';
@@ -16,6 +16,8 @@ function Consulta() {
   const [consultaRPA, setConsultaRPA] = useState(null);
   const [progreso, setProgreso] = useState(0);
   const [estadoBusqueda, setEstadoBusqueda] = useState(null); // Estado de la búsqueda
+  const cancelPollingRef = useRef(false);
+  const intervaloProgresoRef = useRef(null);
 
   // Estados para el modal de confirmación
   const [showModalConfirmar, setShowModalConfirmar] = useState(false);
@@ -178,8 +180,21 @@ function Consulta() {
     }
   };
 
+  const cancelarPolling = () => {
+    cancelPollingRef.current = true;
+    if (intervaloProgresoRef.current) {
+      clearInterval(intervaloProgresoRef.current);
+      intervaloProgresoRef.current = null;
+    }
+    setPolling(false);
+    setProgreso(0);
+    setConsultaRPA(null);
+    setAlert({ type: 'info', message: 'Consulta cancelada' });
+  };
+
   const iniciarPolling = async (consultaId) => {
     if (!consultaId) return;
+    cancelPollingRef.current = false;
     setPolling(true);
     let progresoActual = 0;
     let intentos = 0;
@@ -188,15 +203,17 @@ function Consulta() {
     let intervaloActual = 5000; // 5 segundos inicial
 
     // Intervalo para actualizar la barra de progreso
-    const intervaloProgreso = setInterval(() => {
+    intervaloProgresoRef.current = setInterval(() => {
       progresoActual += 1.5;
       if (progresoActual <= 90) {
         setProgreso(progresoActual);
       }
     }, 500);
+    const intervaloProgreso = intervaloProgresoRef.current;
 
     // Función para verificar el estado de la consulta
     const verificarEstado = async () => {
+      if (cancelPollingRef.current) return;
       intentos++;
       console.log(`Polling intento ${intentos}/${maxIntentos} para consulta ${consultaId}`);
 
@@ -819,16 +836,28 @@ function Consulta() {
               </div>
             </div>
 
-            {/* Badge de Estado */}
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-              consultaRPA?.estado === 'EN_COLA' ? 'bg-yellow-100 text-yellow-800' :
-              consultaRPA?.estado === 'PROCESANDO' ? 'bg-blue-100 text-blue-800' :
-              consultaRPA?.estado === 'COMPLETADO' ? 'bg-green-100 text-green-800' :
-              consultaRPA?.estado === 'ERROR' ? 'bg-red-100 text-red-800' :
-              'bg-gray-100 text-gray-800'
-            }`}>
-              {consultaRPA?.estado || 'INICIANDO'}
-            </span>
+            <div className="flex items-center gap-2">
+              {/* Badge de Estado */}
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                consultaRPA?.estado === 'EN_COLA' ? 'bg-yellow-100 text-yellow-800' :
+                consultaRPA?.estado === 'PROCESANDO' ? 'bg-blue-100 text-blue-800' :
+                consultaRPA?.estado === 'COMPLETADO' ? 'bg-green-100 text-green-800' :
+                consultaRPA?.estado === 'ERROR' ? 'bg-red-100 text-red-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {consultaRPA?.estado || 'INICIANDO'}
+              </span>
+
+              {/* Botón Cancelar — solo visible mientras está en proceso */}
+              {polling && (
+                <button
+                  onClick={cancelarPolling}
+                  className="px-3 py-1 rounded-full text-sm font-semibold bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Barra de progreso solo durante polling */}
