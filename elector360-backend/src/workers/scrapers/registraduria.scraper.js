@@ -5,8 +5,7 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const config = require('../config/worker.config');
 const captchaResolver = require('../services/captcha-resolver.service');
 const helpers = require('../utils/helpers');
-const { createCursor } = require('ghost-cursor');
-const UserAgent = require('user-agents');
+// ghost-cursor y user-agents se cargan lazy para no bloquear el arranque del servidor
 
 // Aplicar plugin stealth
 puppeteer.use(StealthPlugin());
@@ -23,6 +22,9 @@ class RegistraduriaScrap {
    */
   async init() {
     try {
+      const { createCursor } = require('ghost-cursor');
+      const UserAgent = require('user-agents');
+
       const userAgent = new UserAgent().toString();
       const launchOptions = {
         ...config.puppeteer,
@@ -272,15 +274,46 @@ class RegistraduriaScrap {
         return true;
       }
 
+      // Captcha no marcado: recargar y reintentar una vez más
+      console.log('🔄 Captcha no verificado, recargando página para reintentar...');
+      await this.page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
+      await helpers.randomDelay(2000, 3000);
+      await this.llenarFormulario(await this.page.evaluate(() => document.querySelector('#document')?.value || ''));
+      const solution2 = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
+      if (solution2) {
+        await this._inyectarTokenCaptcha(solution2);
+        await helpers.randomDelay(2000, 3000);
+        const marked2 = await this._verificarCaptchaResuelto();
+        if (marked2) {
+          console.log('✅ Captcha resuelto en segundo intento');
+          return true;
+        }
+      }
+
       // Si no se marcó y estamos en desarrollo, fallback manual
       if (!injectionResult.callbackExecuted && !config.isProduction) {
         console.log('🔄 Fallback a modo manual (desarrollo)...');
         return await this._esperarCaptchaManual(120000);
       }
 
-      // En producción sin callback, es un error
+      // En producción sin callback: intentar click directo al botón Consultar
       if (!injectionResult.callbackExecuted && config.isProduction) {
-        console.log('❌ Token inyectado pero callback no ejecutado en producción');
+        console.log('🔄 Callback no ejecutado, intentando click directo al botón...');
+        try {
+          const clicked = await this.page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const btn = buttons.find(b => b.textContent.includes('Consultar'));
+            if (btn) { btn.click(); return true; }
+            return false;
+          });
+          if (clicked) {
+            console.log('✅ Click directo ejecutado');
+            await helpers.randomDelay(2000, 3000);
+            return true;
+          }
+        } catch (clickErr) {
+          console.log('❌ Click directo falló:', clickErr.message);
+        }
         return false;
       }
 
