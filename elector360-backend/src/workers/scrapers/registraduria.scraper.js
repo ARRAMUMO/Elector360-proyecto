@@ -157,7 +157,10 @@ class RegistraduriaScrap {
         throw new Error('No se pudo resolver el captcha');
       }
 
-      // 4. Esperar a que los datos aparezcan (la página los muestra automáticamente tras resolver captcha)
+      // 3b. Click en botón Consultar si la página no auto-envió el formulario
+      await this._intentarSubmit();
+
+      // 4. Esperar a que los datos aparezcan
       await this.esperarResultados();
 
       // 5. Extraer resultados
@@ -276,9 +279,10 @@ class RegistraduriaScrap {
 
       // Captcha no marcado: recargar y reintentar una vez más
       console.log('🔄 Captcha no verificado, recargando página para reintentar...');
+      const documentoActual = await this.page.evaluate(() => document.querySelector('#document')?.value || '');
       await this.page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
       await helpers.randomDelay(2000, 3000);
-      await this.llenarFormulario(await this.page.evaluate(() => document.querySelector('#document')?.value || ''));
+      await this.llenarFormulario(documentoActual);
       const solution2 = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
       if (solution2) {
         await this._inyectarTokenCaptcha(solution2);
@@ -369,71 +373,94 @@ class RegistraduriaScrap {
   async _inyectarTokenCaptcha(token) {
     return await this.page.evaluate((token) => {
       try {
-        // Paso 1: Inyectar en textareas
-        document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {
+        const results = { success: true, callbackExecuted: false, methods: [] };
+
+        // Paso 1: Inyectar en todos los textareas y disparar eventos DOM
+        document.querySelectorAll('[name="g-recaptcha-response"], #g-recaptcha-response').forEach(el => {
           el.innerHTML = token;
           el.value = token;
+          el.style.display = 'block';
+          try { el.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+          try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
         });
+        results.methods.push('textarea_set');
 
-        const responseEl = document.getElementById('g-recaptcha-response');
-        if (responseEl) {
-          responseEl.innerHTML = token;
-          responseEl.value = token;
+        // Paso 2: Intentar callback desde atributo data-callback del div reCAPTCHA
+        const sitekeyEl = document.querySelector('[data-sitekey]');
+        if (sitekeyEl) {
+          const callbackName = sitekeyEl.getAttribute('data-callback');
+          if (callbackName && typeof window[callbackName] === 'function') {
+            try {
+              window[callbackName](token);
+              results.callbackExecuted = true;
+              results.methods.push('data-callback:' + callbackName);
+            } catch (e) {}
+          }
         }
 
-        // Paso 2: Encontrar el widget y su callback
-        let callbackExecuted = false;
-        if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+        // Paso 3: Buscar en ___grecaptcha_cfg.clients (soporta estructura 1 y 2 niveles)
+        if (!results.callbackExecuted && window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
           const clients = window.___grecaptcha_cfg.clients;
 
           Object.keys(clients).forEach(clientId => {
+            if (results.callbackExecuted) return;
             const client = clients[clientId];
             if (!client) return;
 
-            Object.keys(client).forEach(key => {
-              if (isNaN(key)) return;
+            // Estructura 1 nivel: clients[0].callback
+            if (client.textarea) client.textarea.value = token;
+            if (typeof client.callback === 'function') {
+              try { client.callback(token); results.callbackExecuted = true; results.methods.push('client_direct'); } catch (e) {}
+            } else if (typeof client.callback === 'string' && window[client.callback]) {
+              try { window[client.callback](token); results.callbackExecuted = true; results.methods.push('client_direct_string'); } catch (e) {}
+            }
 
-              const widget = client[key];
-              if (!widget) return;
+            // Estructura 2 niveles: clients[0][numericKey].callback
+            if (!results.callbackExecuted) {
+              Object.keys(client).forEach(key => {
+                if (results.callbackExecuted || isNaN(key)) return;
+                const widget = client[key];
+                if (!widget || typeof widget !== 'object') return;
 
-              if (widget.textarea) {
-                widget.textarea.value = token;
-              }
-
-              const callback = widget.callback;
-              if (callback && typeof callback === 'function') {
-                try {
-                  callback(token);
-                  callbackExecuted = true;
-                } catch (e) {
-                  console.error('Error en callback:', e);
+                if (widget.textarea) widget.textarea.value = token;
+                if (typeof widget.callback === 'function') {
+                  try { widget.callback(token); results.callbackExecuted = true; results.methods.push('widget_callback'); } catch (e) {}
+                } else if (typeof widget.callback === 'string' && window[widget.callback]) {
+                  try { window[widget.callback](token); results.callbackExecuted = true; results.methods.push('widget_callback_string'); } catch (e) {}
                 }
-              }
-
-              if (widget.callback && typeof widget.callback === 'string') {
-                try {
-                  if (window[widget.callback]) {
-                    window[widget.callback](token);
-                    callbackExecuted = true;
-                  }
-                } catch (e) {
-                  console.error('Error en callback por nombre:', e);
-                }
-              }
-            });
+              });
+            }
           });
         }
 
-        // Paso 3: Override de grecaptcha.getResponse
+        // Paso 4: Override grecaptcha.getResponse como último recurso
         if (typeof grecaptcha !== 'undefined') {
-          grecaptcha.getResponse = function() { return token; };
+          try { grecaptcha.getResponse = function() { return token; }; results.methods.push('getResponse_override'); } catch (e) {}
         }
 
-        return { success: true, callbackExecuted };
+        return results;
       } catch (error) {
-        return { success: false, error: error.message };
+        return { success: false, callbackExecuted: false, error: error.message };
       }
     }, token);
+  }
+
+  /**
+   * Hacer click en el botón Consultar si está habilitado (fallback cuando no hay auto-submit)
+   */
+  async _intentarSubmit() {
+    try {
+      await helpers.randomDelay(1000, 2000);
+      const clicked = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const btn = buttons.find(b => b.textContent.includes('Consultar') && !b.disabled);
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (clicked) console.log('🖱️ Click en botón Consultar ejecutado');
+    } catch (e) {
+      // La página puede haber navegado ya (auto-submit), ignorar
+    }
   }
 
   /**
