@@ -465,39 +465,54 @@ class RegistraduriaScrap {
 
   /**
    * Verificar si el captcha fue resuelto (botón habilitado)
+   * Si la página está navegando (form auto-enviado), se toma como éxito
    */
   async _verificarCaptchaResuelto() {
-    return await this.page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
-      return submitButton ? !submitButton.disabled : false;
-    });
+    try {
+      return await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
+        return submitButton ? !submitButton.disabled : false;
+      });
+    } catch (e) {
+      if (e.message.includes('detach') || e.message.includes('navigation') || e.message.includes('context')) {
+        console.log('📡 Página navegando: captcha aceptado y formulario enviado automáticamente');
+        return true;
+      }
+      return false;
+    }
   }
 
   /**
-   * Esperar a que los resultados aparezcan en la página
-   * La página de la Registraduría muestra los datos automáticamente tras resolver el captcha
+   * Esperar a que los resultados aparezcan en la página.
+   * Maneja tanto páginas AJAX (sin navegación) como formularios con navegación completa.
    */
   async esperarResultados() {
     try {
       console.log('⏳ Esperando resultados...');
 
+      // Si hubo navegación completa (form POST), esperar a que la nueva página cargue
+      try {
+        await this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 });
+        console.log('📡 Navegación de formulario completada');
+        await helpers.randomDelay(1000, 2000);
+      } catch (navErr) {
+        // No hubo navegación (AJAX) o ya completó antes de llegar aquí → continuar
+      }
+
+      // Esperar a que el contenido de resultados aparezca en el DOM
       await this.page.waitForFunction(
         () => {
           const bodyText = document.body.innerText;
-          // Los resultados muestran estos campos cuando cargaron
           const tieneResultados =
             (bodyText.includes('Departamento') && bodyText.includes('Municipio')) ||
             (bodyText.includes('Puesto') && bodyText.includes('Mesa')) ||
             bodyText.includes('C.C.');
-
-          // Mensajes de error de la página
           const tieneError =
             bodyText.includes('no encontrado') ||
             bodyText.includes('no existe') ||
             bodyText.includes('no aparece') ||
             bodyText.includes('no censado');
-
           return tieneResultados || tieneError;
         },
         { timeout: 30000 }
@@ -506,7 +521,7 @@ class RegistraduriaScrap {
       await helpers.randomDelay(1000, 2000);
       console.log('✅ Resultados cargados');
     } catch (error) {
-      await helpers.takeScreenshot(this.page, 'debug_sin_resultados');
+      try { await helpers.takeScreenshot(this.page, 'debug_sin_resultados'); } catch (e) {}
       console.log('⚠️ Timeout esperando resultados, intentando extraer de todas formas...');
     }
   }
