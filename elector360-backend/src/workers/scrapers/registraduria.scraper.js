@@ -330,7 +330,10 @@ class RegistraduriaScrap {
         try {
           const clicked = await this.page.evaluate(() => {
             const buttons = Array.from(document.querySelectorAll('button'));
-            const btn = buttons.find(b => b.textContent.includes('Consultar'));
+            const btn = buttons.find(b => {
+              const txt = b.textContent.trim();
+              return txt === 'Consultar' || txt === 'CONSULTAR';
+            });
             if (btn) { btn.click(); return true; }
             return false;
           });
@@ -378,7 +381,10 @@ class RegistraduriaScrap {
       await this.page.waitForFunction(
         () => {
           const buttons = Array.from(document.querySelectorAll('button'));
-          const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
+          const submitButton = buttons.find(btn => {
+            const txt = btn.textContent.trim();
+            return txt === 'Consultar' || txt === 'CONSULTAR';
+          });
           return submitButton && !submitButton.disabled;
         },
         { timeout }
@@ -533,11 +539,15 @@ class RegistraduriaScrap {
       await helpers.randomDelay(1000, 2000);
       const clicked = await this.page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
-        const btn = buttons.find(b => b.textContent.includes('Consultar') && !b.disabled);
-        if (btn) { btn.click(); return true; }
+        // Buscar botón cuyo texto sea exactamente "Consultar" (sin incluir variantes como "Consultar ubicación")
+        const btn = buttons.find(b => {
+          const txt = b.textContent.trim();
+          return (txt === 'Consultar' || txt === 'CONSULTAR') && !b.disabled;
+        });
+        if (btn) { btn.click(); return btn.textContent.trim(); }
         return false;
       });
-      if (clicked) console.log('🖱️ Click en botón Consultar ejecutado');
+      if (clicked) console.log(`🖱️ Click en botón "${clicked}" ejecutado`);
     } catch (e) {
       // La página puede haber navegado ya (auto-submit), ignorar
     }
@@ -551,7 +561,10 @@ class RegistraduriaScrap {
     try {
       return await this.page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
-        const submitButton = buttons.find(btn => btn.textContent.includes('Consultar'));
+        const submitButton = buttons.find(btn => {
+          const txt = btn.textContent.trim();
+          return txt === 'Consultar' || txt === 'CONSULTAR';
+        });
         return submitButton ? !submitButton.disabled : false;
       });
     } catch (e) {
