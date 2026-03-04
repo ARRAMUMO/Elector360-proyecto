@@ -26,20 +26,30 @@ class RegistraduriaScrap {
     const path = require('path');
     const { execSync } = require('child_process');
 
-    // Matar procesos Chrome/Chromium que puedan estar bloqueando el perfil
-    try {
-      if (process.platform === 'win32') {
-        execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
-        execSync('taskkill /F /IM chromium.exe /T 2>nul', { stdio: 'ignore' });
-      } else {
-        execSync('pkill -f chrome 2>/dev/null || true', { stdio: 'ignore' });
-        execSync('pkill -f chromium 2>/dev/null || true', { stdio: 'ignore' });
-      }
-    } catch (e) { /* no hay procesos, ok */ }
-
     const profileDir = config.puppeteer.userDataDir;
     if (!profileDir) return;
-    for (const nombre of ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie']) {
+
+    const lockFileNames = ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie'];
+
+    // Solo matar Chrome si realmente existen lock files que bloquean el perfil
+    const hayLockFiles = lockFileNames.some(nombre => {
+      try { fs.accessSync(path.join(profileDir, nombre)); return true; } catch (e) { return false; }
+    });
+
+    if (hayLockFiles) {
+      console.log('🔒 Lock files detectados, matando procesos Chrome bloqueados...');
+      try {
+        if (process.platform === 'win32') {
+          execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
+          execSync('taskkill /F /IM chromium.exe /T 2>nul', { stdio: 'ignore' });
+        } else {
+          execSync('pkill -f chrome 2>/dev/null || true', { stdio: 'ignore' });
+          execSync('pkill -f chromium 2>/dev/null || true', { stdio: 'ignore' });
+        }
+      } catch (e) { /* no hay procesos, ok */ }
+    }
+
+    for (const nombre of lockFileNames) {
       try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (e) { /* no existe, ok */ }
     }
   }

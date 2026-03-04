@@ -175,7 +175,8 @@ class WorkerPool extends EventEmitter {
 
     if (availableWorker) {
       // Verificar si el browser sigue conectado (el usuario pudo haberlo cerrado)
-      const browserConectado = availableWorker.instance.browser?.isConnected?.() ?? false;
+      // Puppeteer v21+ usa browser.connected (getter), no browser.isConnected()
+      const browserConectado = availableWorker.instance.browser?.connected ?? false;
       if (!browserConectado) {
         console.log(`🔄 Browser del worker ${availableWorker.id} cerrado, reiniciando...`);
         availableWorker.busy = true;
