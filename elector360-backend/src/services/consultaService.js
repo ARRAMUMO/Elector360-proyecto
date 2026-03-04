@@ -177,7 +177,14 @@ class ConsultaService {
       response.mensaje = 'Consulta completada exitosamente';
     } else if (consulta.estado === 'ERROR') {
       response.error = consulta.error;
-      response.mensaje = consulta.error || 'Error en la consulta';
+      const errorLower = (consulta.error || '').toLowerCase();
+      const esNoCensado = ['no encontrado', 'no existe', 'no censado', 'no aparece', 'censo electoral'].some(k => errorLower.includes(k));
+      if (esNoCensado) {
+        response.noCensado = true;
+        response.mensaje = 'Cédula no encontrada en el censo electoral de la Registraduría';
+      } else {
+        response.mensaje = consulta.error || 'Error en la consulta';
+      }
     } else if (consulta.estado === 'PROCESANDO') {
       response.mensaje = 'Consultando en Registraduria...';
     } else {

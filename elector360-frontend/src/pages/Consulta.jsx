@@ -257,15 +257,27 @@ function Consulta() {
           if (resultado.consulta.estado === 'ERROR') {
             clearInterval(intervaloProgreso);
             setPolling(false);
-            setEstadoBusqueda(prev => ({
-              ...prev,
-              tipo: 'error_rpa',
-              error: resultado.consulta.error || 'Error en la consulta'
-            }));
-            setAlert({
-              type: 'error',
-              message: resultado.consulta.error || 'Error al consultar en la Registraduría'
-            });
+            if (resultado.consulta.noCensado) {
+              setEstadoBusqueda(prev => ({
+                ...prev,
+                tipo: 'no_censado',
+                error: resultado.consulta.mensaje
+              }));
+              setAlert({
+                type: 'warning',
+                message: '⚠️ ' + resultado.consulta.mensaje
+              });
+            } else {
+              setEstadoBusqueda(prev => ({
+                ...prev,
+                tipo: 'error_rpa',
+                error: resultado.consulta.error || 'Error en la consulta'
+              }));
+              setAlert({
+                type: 'error',
+                message: resultado.consulta.error || 'Error al consultar en la Registraduría'
+              });
+            }
             return; // Terminado con error
           }
 
@@ -685,6 +697,7 @@ function Consulta() {
           estadoBusqueda.tipo === 'consultando_rpa' ? 'bg-teal-50 border-teal-200' :
           estadoBusqueda.tipo === 'actualizando_rpa' ? 'bg-indigo-50 border-indigo-200' :
           estadoBusqueda.tipo === 'no_encontrada' ? 'bg-yellow-50 border-yellow-200' :
+          estadoBusqueda.tipo === 'no_censado' ? 'bg-orange-50 border-orange-300' :
           'bg-red-50 border-red-200'
         }`}>
           <div className="flex items-center justify-between">
@@ -716,6 +729,12 @@ function Consulta() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
+              ) : estadoBusqueda.tipo === 'no_censado' ? (
+                <div className="h-10 w-10 bg-orange-500 rounded-full flex items-center justify-center mr-4">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                </div>
               ) : (
                 <div className="h-10 w-10 bg-red-500 rounded-full flex items-center justify-center mr-4">
                   <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -731,6 +750,7 @@ function Consulta() {
                   estadoBusqueda.tipo === 'consultando_rpa' ? 'text-blue-800' :
                   estadoBusqueda.tipo === 'actualizando_rpa' ? 'text-indigo-800' :
                   estadoBusqueda.tipo === 'no_encontrada' ? 'text-yellow-800' :
+                  estadoBusqueda.tipo === 'no_censado' ? 'text-orange-800' :
                   'text-red-800'
                 }`}>
                   {estadoBusqueda.tipo === 'buscando' ? 'Buscando...' :
@@ -739,6 +759,7 @@ function Consulta() {
                    estadoBusqueda.tipo === 'consultando_rpa' ? 'Consultando Registraduría...' :
                    estadoBusqueda.tipo === 'actualizando_rpa' ? 'Actualizando desde Registraduría...' :
                    estadoBusqueda.tipo === 'no_encontrada' ? 'No Encontrada' :
+                   estadoBusqueda.tipo === 'no_censado' ? 'No Registrada en Registraduría' :
                    'Error en la Búsqueda'}
                 </h3>
                 <p className="text-sm text-gray-600">
@@ -776,8 +797,17 @@ function Consulta() {
             </div>
           )}
 
+          {/* Mensaje de no censado */}
+          {estadoBusqueda.tipo === 'no_censado' && (
+            <div className="mt-3 p-3 bg-orange-100 rounded-lg">
+              <p className="text-sm text-orange-800 font-medium">
+                La cédula <span className="font-mono font-bold">{estadoBusqueda.documento}</span> no aparece registrada en el censo electoral de la Registraduría Nacional.
+              </p>
+            </div>
+          )}
+
           {/* Mensaje de error */}
-          {estadoBusqueda.error && (
+          {estadoBusqueda.error && estadoBusqueda.tipo !== 'no_censado' && (
             <div className="mt-3 p-3 bg-red-100 rounded-lg">
               <p className="text-sm text-red-800">{estadoBusqueda.error}</p>
             </div>
