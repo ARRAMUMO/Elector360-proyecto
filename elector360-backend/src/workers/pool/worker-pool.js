@@ -170,9 +170,29 @@ class WorkerPool extends EventEmitter {
     // Si ya hay demasiados jobs activos, esperar
     if (this.activeJobs >= this.maxConcurrent) return;
     
-    // Buscar worker disponible
-    const availableWorker = this.workers.find(w => !w.busy);
-    
+    // Buscar worker disponible y con browser conectado
+    let availableWorker = this.workers.find(w => !w.busy);
+
+    if (availableWorker) {
+      // Verificar si el browser sigue conectado (el usuario pudo haberlo cerrado)
+      const browserConectado = availableWorker.instance.browser?.isConnected?.() ?? false;
+      if (!browserConectado) {
+        console.log(`🔄 Browser del worker ${availableWorker.id} cerrado, reiniciando...`);
+        availableWorker.busy = true;
+        try {
+          await availableWorker.instance.init();
+          console.log(`✅ Browser reiniciado para worker ${availableWorker.id}`);
+        } catch (e) {
+          console.error(`❌ Error reiniciando browser:`, e.message);
+          this.workers = this.workers.filter(w => w.id !== availableWorker.id);
+          this.stats.activeWorkers = this.workers.length;
+          availableWorker = null;
+        } finally {
+          if (availableWorker) availableWorker.busy = false;
+        }
+      }
+    }
+
     if (!availableWorker) {
       // Intentar agregar worker si hay capacidad
       if (this.workers.length < this.maxWorkers) {
