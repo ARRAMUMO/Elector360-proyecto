@@ -15,6 +15,7 @@ class RegistraduriaScrap {
     this.browser = null;
     this.page = null;
     this.cursor = null;
+    this._chromePid = null; // PID del proceso Chrome de Puppeteer
   }
 
   /**
@@ -37,14 +38,27 @@ class RegistraduriaScrap {
     });
 
     if (hayLockFiles) {
-      console.log('🔒 Lock files detectados, matando procesos Chrome bloqueados...');
+      console.log('🔒 Lock files detectados, terminando proceso Chrome bloqueado...');
       try {
-        if (process.platform === 'win32') {
-          execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
-          execSync('taskkill /F /IM chromium.exe /T 2>nul', { stdio: 'ignore' });
+        if (this._chromePid) {
+          // Matar SOLO el proceso de Puppeteer por PID (no afecta al Chrome del usuario)
+          if (process.platform === 'win32') {
+            execSync(`taskkill /F /PID ${this._chromePid} /T 2>nul`, { stdio: 'ignore' });
+          } else {
+            execSync(`kill -9 ${this._chromePid} 2>/dev/null || true`, { stdio: 'ignore' });
+          }
+          this._chromePid = null;
         } else {
-          execSync('pkill -f chrome 2>/dev/null || true', { stdio: 'ignore' });
-          execSync('pkill -f chromium 2>/dev/null || true', { stdio: 'ignore' });
+          // Fallback: matar por nombre de directorio de perfil (no por proceso genérico)
+          const profileName = path.basename(profileDir);
+          if (process.platform === 'win32') {
+            execSync(
+              `wmic process where "name='chrome.exe' and commandline like '%${profileName}%'" delete`,
+              { stdio: 'ignore', timeout: 5000 }
+            );
+          } else {
+            execSync(`pkill -f "chrome.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore' });
+          }
         }
       } catch (e) { /* no hay procesos, ok */ }
     }
@@ -81,6 +95,7 @@ class RegistraduriaScrap {
       }
 
       this.browser = await puppeteer.launch(launchOptions);
+      this._chromePid = this.browser.process()?.pid ?? null;
       this.page = await this.browser.newPage();
 
       // Autenticación de Proxy (si es requerida)
@@ -815,6 +830,7 @@ class RegistraduriaScrap {
         await this.browser.close();
         this.browser = null;
         this.page = null;
+        this._chromePid = null;
         console.log('✅ Navegador cerrado');
       }
     } catch (error) {
