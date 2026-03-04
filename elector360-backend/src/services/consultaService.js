@@ -45,45 +45,7 @@ class ConsultaService {
         }
       }
 
-      // Verificar si necesita actualizacion
-      const necesitaActualizacion = this.necesitaActualizacion(personaExistente);
-
-      if (necesitaActualizacion) {
-        // Verificar si ya hay una consulta en proceso (global, no solo de esta campaña)
-        const consultaExistente = await ConsultaRPA.findOne({
-          documento,
-          estado: { $in: ['EN_COLA', 'PROCESANDO'] }
-        });
-
-        if (consultaExistente) {
-          return {
-            encontrado: true,
-            enBD: true,
-            desactualizado: true,
-            persona: personaExistente,
-            enCola: true,
-            consultaId: consultaExistente._id,
-            estado: consultaExistente.estado,
-            mensaje: 'Consulta ya en proceso. Espera un momento...'
-          };
-        }
-
-        // Encolar con PRIORIDAD MEDIA (2)
-        const consulta = await this.encolarConsulta(documento, usuarioId, 2, personaExistente._id, campanaId);
-
-        return {
-          encontrado: true,
-          enBD: true,
-          desactualizado: true,
-          persona: personaExistente,
-          enCola: true,
-          consultaId: consulta._id,
-          estado: consulta.estado,
-          mensaje: 'Persona encontrada pero desactualizada. Consultando actualizaciones...'
-        };
-      }
-
-      // Esta actualizado
+      // Persona encontrada en BD - retornar sin auto-actualizar via RPA
       return {
         encontrado: true,
         enBD: true,
