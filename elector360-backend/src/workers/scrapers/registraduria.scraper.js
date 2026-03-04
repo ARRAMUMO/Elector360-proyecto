@@ -19,14 +19,27 @@ class RegistraduriaScrap {
 
   /**
    * Limpiar lock files del perfil de Chrome antes de lanzar.
-   * Evita el error "The browser is already running for [profile]".
+   * Mata procesos Chrome huérfanos y elimina los lock files.
    */
   _limpiarLockFiles() {
     const fs = require('fs');
     const path = require('path');
+    const { execSync } = require('child_process');
+
+    // Matar procesos Chrome/Chromium que puedan estar bloqueando el perfil
+    try {
+      if (process.platform === 'win32') {
+        execSync('taskkill /F /IM chrome.exe /T 2>nul', { stdio: 'ignore' });
+        execSync('taskkill /F /IM chromium.exe /T 2>nul', { stdio: 'ignore' });
+      } else {
+        execSync('pkill -f chrome 2>/dev/null || true', { stdio: 'ignore' });
+        execSync('pkill -f chromium 2>/dev/null || true', { stdio: 'ignore' });
+      }
+    } catch (e) { /* no hay procesos, ok */ }
+
     const profileDir = config.puppeteer.userDataDir;
     if (!profileDir) return;
-    for (const nombre of ['SingletonLock', 'lockfile', 'DevToolsActivePort']) {
+    for (const nombre of ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie']) {
       try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (e) { /* no existe, ok */ }
     }
   }
