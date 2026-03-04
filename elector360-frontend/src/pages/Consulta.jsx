@@ -18,6 +18,7 @@ function Consulta() {
   const [estadoBusqueda, setEstadoBusqueda] = useState(null); // Estado de la búsqueda
   const cancelPollingRef = useRef(false);
   const intervaloProgresoRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Estados para el modal de confirmación
   const [showModalConfirmar, setShowModalConfirmar] = useState(false);
@@ -177,6 +178,8 @@ function Consulta() {
       setAlert({ type: 'error', message: 'Error de conexión con el servidor' });
     } finally {
       setLoading(false);
+      setDocumento('');
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   };
 
@@ -654,6 +657,7 @@ function Consulta() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Número de Cédula</label>
             <input
+              ref={inputRef}
               type="text"
               value={documento}
               onChange={(e) => setDocumento(e.target.value.replace(/\D/g, ''))}
