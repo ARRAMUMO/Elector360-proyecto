@@ -6,3 +6,5 @@ coverage/
 npm-debug.log
 yarn-error.log
 chrome-profile/
+edge-profile/
+browser-profile/
