@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const Persona = require('../models/Persona');
 const ColaConsulta = require('../models/ColaConsulta');
+const ConsultaRPA = require('../models/consultaRPA.model');
 const HistorialCambio = require('../models/HistorialCambio');
 const Usuario = require('../models/Usuario');
 
@@ -56,13 +57,18 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
       ]
     }),
 
-    // Consultas hoy
-    ColaConsulta.countDocuments({
-      ...req.campanaFilter,
-      createdAt: {
-        $gte: new Date(new Date().setHours(0, 0, 0, 0))
-      }
-    }),
+    // Consultas hoy: individuales (ConsultaRPA) + masivas (ColaConsulta)
+    Promise.all([
+      ConsultaRPA.countDocuments({
+        ...req.campanaFilter,
+        ...(esAdmin || esCoordinador ? {} : { usuario: usuario._id }),
+        createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+      }),
+      ColaConsulta.countDocuments({
+        ...req.campanaFilter,
+        createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+      })
+    ]).then(([rpa, cola]) => rpa + cola),
 
     // Cambios recientes (solo para ADMIN/COORDINADOR)
     (esAdmin || esCoordinador)

@@ -49,15 +49,18 @@ class RegistraduriaScrap {
           }
           this._chromePid = null;
         } else {
-          // Fallback: matar por nombre de directorio de perfil (no por proceso genérico)
+          // Fallback: matar por nombre de directorio de perfil usando el ejecutable configurado
           const profileName = path.basename(profileDir);
+          const exeName = config.puppeteer.executablePath
+            ? path.basename(config.puppeteer.executablePath) // ej: 'msedge.exe', 'brave.exe'
+            : 'chrome.exe';
           if (process.platform === 'win32') {
             execSync(
-              `wmic process where "name='chrome.exe' and commandline like '%${profileName}%'" delete`,
+              `wmic process where "name='${exeName}' and commandline like '%${profileName}%'" delete`,
               { stdio: 'ignore', timeout: 5000 }
             );
           } else {
-            execSync(`pkill -f "chrome.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore' });
+            execSync(`pkill -f "${exeName.replace('.exe', '')}.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore' });
           }
         }
       } catch (e) { /* no hay procesos, ok */ }
@@ -213,6 +216,11 @@ class RegistraduriaScrap {
 
       // 3b. Click en botón Consultar si la página no auto-envió el formulario
       await this._intentarSubmit();
+
+      // Screenshot de diagnóstico para ver estado post-submit
+      try {
+        await helpers.takeScreenshot(this.page, `debug_post_submit_${documento}`);
+      } catch (e) { /* ignorar */ }
 
       // 4. Esperar a que los datos aparezcan
       await this.esperarResultados();
@@ -575,17 +583,31 @@ class RegistraduriaScrap {
   async _intentarSubmit() {
     try {
       await helpers.randomDelay(1000, 2000);
-      const clicked = await this.page.evaluate(() => {
+
+      // Usar Puppeteer para hacer un click real (dispara eventos React/Vue correctamente)
+      const btnHandle = await this.page.evaluateHandle(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
-        // Buscar botón cuyo texto sea exactamente "Consultar" (sin incluir variantes como "Consultar ubicación")
-        const btn = buttons.find(b => {
+        return buttons.find(b => {
           const txt = b.textContent.trim();
           return (txt === 'Consultar' || txt === 'CONSULTAR') && !b.disabled;
         });
-        if (btn) { btn.click(); return btn.textContent.trim(); }
+      });
+
+      if (btnHandle && (await btnHandle.asElement())) {
+        await btnHandle.click(); // Click real de Puppeteer con eventos mouse
+        const txt = await this.page.evaluate(btn => btn?.textContent?.trim(), btnHandle);
+        console.log(`🖱️ Click real en botón "${txt}" ejecutado`);
+        await btnHandle.dispose();
+        return;
+      }
+
+      // Fallback: submit directo del formulario
+      const submitted = await this.page.evaluate(() => {
+        const form = document.querySelector('form');
+        if (form) { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); return true; }
         return false;
       });
-      if (clicked) console.log(`🖱️ Click en botón "${clicked}" ejecutado`);
+      if (submitted) console.log('🖱️ Submit de formulario ejecutado (fallback)');
     } catch (e) {
       // La página puede haber navegado ya (auto-submit), ignorar
     }
@@ -638,12 +660,20 @@ class RegistraduriaScrap {
           const tieneResultados =
             (bodyText.includes('Departamento') && bodyText.includes('Municipio')) ||
             (bodyText.includes('Puesto') && bodyText.includes('Mesa')) ||
-            bodyText.includes('C.C.');
+            bodyText.includes('C.C.') ||
+            bodyText.includes('lugar de votación') ||
+            bodyText.includes('puesto de votación') ||
+            bodyText.includes('mesa de votación');
           const tieneError =
             bodyText.includes('no encontrado') ||
             bodyText.includes('no existe') ||
             bodyText.includes('no aparece') ||
-            bodyText.includes('no censado');
+            bodyText.includes('no censado') ||
+            bodyText.includes('no fue encontrado') ||
+            bodyText.includes('no está registrado') ||
+            bodyText.includes('no se encontró') ||
+            bodyText.includes('No se encontró') ||
+            bodyText.includes('No fue encontrado');
           return tieneResultados || tieneError;
         },
         { timeout: 30000 }
@@ -653,7 +683,14 @@ class RegistraduriaScrap {
       console.log('✅ Resultados cargados');
     } catch (error) {
       try { await helpers.takeScreenshot(this.page, 'debug_sin_resultados'); } catch (e) {}
-      console.log('⚠️ Timeout esperando resultados, intentando extraer de todas formas...');
+      // Log del texto de la página para diagnóstico
+      try {
+        const pageText = await this.page.evaluate(() => document.body.innerText.substring(0, 500));
+        const pageUrl = this.page.url();
+        console.log(`⚠️ Timeout esperando resultados. URL: ${pageUrl}`);
+        console.log(`📄 Texto página (500 chars): ${pageText}`);
+      } catch (e) { /* ignorar */ }
+      console.log('⚠️ Intentando extraer de todas formas...');
     }
   }
 

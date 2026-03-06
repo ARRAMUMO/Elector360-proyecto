@@ -2,6 +2,17 @@
 
 import api from './api';
 
+// Verificar sesión activa al cargar el módulo.
+// sessionStorage se borra al cerrar la pestaña; localStorage persiste.
+// Si no hay flag de sesión activa, limpiar tokens residuales.
+(function verificarSesion() {
+  if (!sessionStorage.getItem('sessionActiva') && localStorage.getItem('token')) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+  }
+})();
+
 const authService = {
   /**
    * Login - Iniciar sesión
@@ -19,10 +30,11 @@ const authService = {
       if (response.data.success) {
         const { accessToken, refreshToken, user } = response.data.data;
 
-        // Guardar en localStorage
+        // Guardar en localStorage y marcar sesión activa en sessionStorage
         localStorage.setItem('token', accessToken);
         localStorage.setItem('refreshToken', refreshToken);
         localStorage.setItem('user', JSON.stringify(user));
+        sessionStorage.setItem('sessionActiva', '1');
 
         return {
           success: true,
@@ -52,10 +64,10 @@ const authService = {
     } catch (error) {
       console.error('Error en logout:', error);
     } finally {
-      // Limpiar localStorage siempre
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      sessionStorage.removeItem('sessionActiva');
     }
   },
 
