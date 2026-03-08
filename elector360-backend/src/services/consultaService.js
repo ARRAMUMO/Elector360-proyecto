@@ -495,8 +495,10 @@ class ConsultaService {
     await Usuario.updateOne(
       { _id: usuarioId },
       {
-        'stats.personasRegistradas': count,
-        'stats.ultimaConsulta': new Date(),
+        $set: {
+          'stats.personasRegistradas': count,
+          'stats.ultimaConsulta': new Date()
+        },
         $inc: { 'stats.consultasRealizadas': 1 }
       }
     );

@@ -130,22 +130,24 @@ process.on('unhandledRejection', (err) => {
   });
 });
 
-process.on('SIGTERM', () => {
-  console.log('👋 SIGTERM received. Shutting down gracefully');
-  server.close(() => {
-    console.log('💥 Process terminated');
-  });
-});
+// Cierre graceful: cerrar Chrome antes de que nodemon mate el proceso
+async function gracefulShutdown(signal) {
+  console.log(`${signal} recibido, cerrando Chrome y servidor...`);
+  // Forzar salida si el shutdown tarda más de 8 segundos
+  const forceExit = setTimeout(() => {
+    console.log('⏰ Timeout de shutdown, forzando salida');
+    process.exit(0);
+  }, 8000);
+  forceExit.unref();
 
-// Manejar cierre graceful
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM recibido, cerrando...');
-  await rpaWorker.stop();
+  try {
+    server.close();
+    await rpaWorker.stop();
+  } catch (e) {
+    console.error('Error en shutdown:', e.message);
+  }
   process.exit(0);
-});
+}
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT recibido, cerrando...');
-  await rpaWorker.stop();
-  process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

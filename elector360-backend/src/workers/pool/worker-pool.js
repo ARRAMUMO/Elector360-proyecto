@@ -174,17 +174,17 @@ class WorkerPool extends EventEmitter {
     let availableWorker = this.workers.find(w => !w.busy);
 
     if (availableWorker) {
-      // Verificar si el browser sigue conectado (el usuario pudo haberlo cerrado)
-      // Puppeteer v21+ usa browser.connected (getter), no browser.isConnected()
-      const browserConectado = availableWorker.instance.browser?.connected ?? false;
-      if (!browserConectado) {
-        console.log(`🔄 Browser del worker ${availableWorker.id} cerrado, reiniciando...`);
+      // Verificar si el browser sigue activo (el usuario pudo haberlo cerrado)
+      const browserActivo = availableWorker.instance.browser != null &&
+                            availableWorker.instance.browser.connected !== false;
+      if (!browserActivo) {
+        console.log(`🔄 Browser del worker ${availableWorker.id} no disponible, reiniciando...`);
         availableWorker.busy = true;
         try {
           await availableWorker.instance.init();
           console.log(`✅ Browser reiniciado para worker ${availableWorker.id}`);
         } catch (e) {
-          console.error(`❌ Error reiniciando browser:`, e.message);
+          console.error(`❌ Error reiniciando browser: ${e.message}. Eliminando worker y creando uno nuevo...`);
           this.workers = this.workers.filter(w => w.id !== availableWorker.id);
           this.stats.activeWorkers = this.workers.length;
           availableWorker = null;
@@ -195,11 +195,13 @@ class WorkerPool extends EventEmitter {
     }
 
     if (!availableWorker) {
-      // Intentar agregar worker si hay capacidad
+      // No hay worker disponible: crear uno nuevo
       if (this.workers.length < this.maxWorkers) {
-        await this.addWorker();
-        // Reintentar procesar
-        this.processQueue();
+        const newId = await this.addWorker();
+        if (newId) {
+          // Reintentar inmediatamente con el nuevo worker
+          setImmediate(() => this.processQueue());
+        }
       }
       return;
     }
@@ -321,9 +323,10 @@ class WorkerPool extends EventEmitter {
   async shutdown() {
     console.log('🛑 Cerrando pool de workers...');
     this.isShuttingDown = true;
-    
-    // Esperar a que terminen los jobs activos
-    while (this.activeJobs > 0) {
+
+    // Esperar a que terminen los jobs activos (máximo 5 segundos)
+    const maxWait = Date.now() + 5000;
+    while (this.activeJobs > 0 && Date.now() < maxWait) {
       console.log(`⏳ Esperando ${this.activeJobs} jobs activos...`);
       await new Promise(resolve => setTimeout(resolve, 1000));
     }

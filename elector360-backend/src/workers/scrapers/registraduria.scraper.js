@@ -30,44 +30,41 @@ class RegistraduriaScrap {
     const profileDir = config.puppeteer.userDataDir;
     if (!profileDir) return;
 
-    const lockFileNames = ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie'];
+    const profileName = path.basename(profileDir);
+    const exeName = config.puppeteer.executablePath
+      ? path.basename(config.puppeteer.executablePath)
+      : 'chrome.exe';
 
-    // Solo matar Chrome si realmente existen lock files que bloquean el perfil
-    const hayLockFiles = lockFileNames.some(nombre => {
-      try { fs.accessSync(path.join(profileDir, nombre)); return true; } catch (e) { return false; }
-    });
-
-    if (hayLockFiles) {
-      console.log('🔒 Lock files detectados, terminando proceso Chrome bloqueado...');
+    // Siempre matar cualquier Chrome usando este perfil (por PID si lo tenemos, sino por nombre de perfil).
+    // Esto limpia tanto procesos huérfanos de sesiones anteriores como el proceso actual.
+    if (this._chromePid) {
       try {
-        if (this._chromePid) {
-          // Matar SOLO el proceso de Puppeteer por PID (no afecta al Chrome del usuario)
-          if (process.platform === 'win32') {
-            execSync(`taskkill /F /PID ${this._chromePid} /T 2>nul`, { stdio: 'ignore' });
-          } else {
-            execSync(`kill -9 ${this._chromePid} 2>/dev/null || true`, { stdio: 'ignore' });
-          }
-          this._chromePid = null;
+        if (process.platform === 'win32') {
+          execSync(`taskkill /F /PID ${this._chromePid} /T 2>nul`, { stdio: 'ignore', timeout: 3000 });
         } else {
-          // Fallback: matar por nombre de directorio de perfil usando el ejecutable configurado
-          const profileName = path.basename(profileDir);
-          const exeName = config.puppeteer.executablePath
-            ? path.basename(config.puppeteer.executablePath) // ej: 'msedge.exe', 'brave.exe'
-            : 'chrome.exe';
-          if (process.platform === 'win32') {
-            execSync(
-              `wmic process where "name='${exeName}' and commandline like '%${profileName}%'" delete`,
-              { stdio: 'ignore', timeout: 5000 }
-            );
-          } else {
-            execSync(`pkill -f "${exeName.replace('.exe', '')}.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore' });
-          }
+          execSync(`kill -9 ${this._chromePid} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
         }
-      } catch (e) { /* no hay procesos, ok */ }
+        console.log(`🔒 Chrome (PID ${this._chromePid}) terminado antes de reiniciar`);
+      } catch (_) { /* ya cerrado */ }
+      this._chromePid = null;
+    } else {
+      // Sin PID guardado: buscar por perfil (captura procesos huérfanos de sesiones anteriores)
+      try {
+        if (process.platform === 'win32') {
+          execSync(
+            `wmic process where "name='${exeName}' and commandline like '%${profileName}%'" delete`,
+            { stdio: 'ignore', timeout: 5000 }
+          );
+        } else {
+          execSync(`pkill -f "${exeName.replace('.exe', '')}.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore', timeout: 5000 });
+        }
+      } catch (_) { /* no hay procesos bloqueando, ok */ }
     }
 
+    // Eliminar lock files que Chrome no haya limpiado (por cierre forzado)
+    const lockFileNames = ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie'];
     for (const nombre of lockFileNames) {
-      try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (e) { /* no existe, ok */ }
+      try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (_) { /* no existe, ok */ }
     }
   }
 
@@ -75,6 +72,17 @@ class RegistraduriaScrap {
    * Inicializar navegador con anti-detección
    */
   async init() {
+    try {
+      await this._intentarInit();
+    } catch (error) {
+      console.error(`❌ Error iniciando Chrome: ${error.message}. Requiere intervención manual.`);
+      this.browser = null;
+      this.page = null;
+      throw error;
+    }
+  }
+
+  async _intentarInit() {
     try {
       this._limpiarLockFiles();
 
@@ -99,6 +107,7 @@ class RegistraduriaScrap {
 
       this.browser = await puppeteer.launch(launchOptions);
       this._chromePid = this.browser.process()?.pid ?? null;
+      console.log(`🌐 Chrome iniciado${this._chromePid ? ` (PID ${this._chromePid})` : ' (PID no disponible)'}`);
       this.page = await this.browser.newPage();
 
       // Autenticación de Proxy (si es requerida)
@@ -170,13 +179,8 @@ class RegistraduriaScrap {
       await this.page.evaluate(() => true);
     } catch (error) {
       console.log('🔄 Página no responde, recreando navegador...');
-      // Cerrar browser viejo si existe
-      try {
-        if (this.browser) await this.browser.close();
-      } catch (e) { /* ignorar */ }
-      this.browser = null;
-      this.page = null;
       this.cursor = null;
+      await this.close(); // mata Chrome por PID y limpia browser/page/_chromePid
       await this.init();
     }
   }
@@ -859,20 +863,26 @@ class RegistraduriaScrap {
   }
 
   /**
-   * Cerrar navegador
+   * Cerrar navegador — mata el proceso Chrome por PID para garantizar
+   * que el proceso muera aunque browser.close() falle o cuelgue.
    */
   async close() {
+    const pid = this._chromePid;
+    this.browser = null;
+    this.page = null;
+    this._chromePid = null;
+
+    if (!pid) return;
+
     try {
-      if (this.browser) {
-        await this.browser.close();
-        this.browser = null;
-        this.page = null;
-        this._chromePid = null;
-        console.log('✅ Navegador cerrado');
+      const { execSync } = require('child_process');
+      if (process.platform === 'win32') {
+        execSync(`taskkill /F /PID ${pid} /T 2>nul`, { stdio: 'ignore', timeout: 3000 });
+      } else {
+        execSync(`kill -9 ${pid} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
       }
-    } catch (error) {
-      console.error('❌ Error cerrando navegador:', error);
-    }
+      console.log(`✅ Proceso Chrome (PID ${pid}) terminado`);
+    } catch (_) { /* ya cerrado */ }
   }
 }
 
