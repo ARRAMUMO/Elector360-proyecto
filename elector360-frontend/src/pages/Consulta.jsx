@@ -46,6 +46,7 @@ function Consulta() {
     departamento: '', municipio: '', zona: '', nombrePuesto: '', direccion: '', mesa: '', notas: ''
   });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [confirmandoVoto, setConfirmandoVoto] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -587,6 +588,24 @@ function Consulta() {
       setAlert({ type: 'error', message: 'Error al actualizar la persona' });
     } finally {
       setGuardandoEdicion(false);
+    }
+  };
+
+  const confirmarVoto = async () => {
+    if (!resultado?._id) return;
+    setConfirmandoVoto(true);
+    try {
+      const respuesta = await personaService.actualizar(resultado._id, { estadoVoto: 'CUMPLIDO' });
+      if (respuesta.success) {
+        setResultado(prev => ({ ...prev, estadoVoto: 'CUMPLIDO' }));
+        addToast('Voto confirmado', 'success');
+      } else {
+        addToast(respuesta.error || 'Error al confirmar voto', 'error');
+      }
+    } catch {
+      addToast('Error al confirmar voto', 'error');
+    } finally {
+      setConfirmandoVoto(false);
     }
   };
 
@@ -1282,6 +1301,26 @@ function Consulta() {
                       </svg>
                       Agregar a mi lista
                     </button>
+                  )}
+                  {esPersonaMia && resultado._id && resultado.estadoVoto !== 'CUMPLIDO' && (
+                    <button
+                      onClick={confirmarVoto}
+                      disabled={confirmandoVoto}
+                      className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {confirmandoVoto ? 'Guardando...' : 'Confirmó voto'}
+                    </button>
+                  )}
+                  {esPersonaMia && resultado.estadoVoto === 'CUMPLIDO' && (
+                    <span className="inline-flex items-center px-3 py-1.5 bg-emerald-100 text-emerald-800 text-sm font-semibold rounded-lg">
+                      <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      Voto confirmado
+                    </span>
                   )}
                   {puedeEditar && (
                     <button

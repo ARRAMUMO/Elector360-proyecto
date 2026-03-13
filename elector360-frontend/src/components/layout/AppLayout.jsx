@@ -41,6 +41,12 @@ function AppLayout() {
       roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
+      name: 'Resultados E-14',
+      icon: '📋',
+      path: '/e14',
+      roles: ['ADMIN', 'COORDINADOR', 'LIDER']
+    },
+    {
       name: 'Operaciones Masivas',
       icon: '📤',
       path: '/operaciones-masivas',

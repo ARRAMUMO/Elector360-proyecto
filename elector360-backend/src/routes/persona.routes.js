@@ -42,6 +42,6 @@ router.put('/:id/asignar-lider', requireCoordinador, personaController.asignarLi
 router.route('/:id')
   .get(personaController.obtenerPersona)
   .put(personaController.actualizarPersona)
-  .delete(requireAdmin, personaController.eliminarPersona);
+  .delete(requireCoordinador, personaController.eliminarPersona);
 
 module.exports = router;

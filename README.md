@@ -33,8 +33,23 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Filtros avanzados** por departamento, municipio, puesto, mesa, zona
 - **Dashboard** con metricas generales
 
+### Resultados E-14 (Escrutinio de Mesa)
+- **Registro de resultados** por mesa de votacion: votos candidato, votos lista, total urna, inscritos E-11
+- **Importacion masiva desde Excel** del formulario E-14 oficial de la Registraduria (bulk upsert, soporta 6.000+ filas)
+- **Importacion por cola de PDFs**: carga multiple de archivos PDF del E-14, visor integrado y formulario de captura con avance automatico entre mesas
+- **Analisis cruzado** ResultadoMesa x Personas: calcula cuantas personas registradas hay en cada mesa y la efectividad del candidato
+- **Verificacion de votos**: cruza todos los resultados E-14 con las personas de la campana y asigna estado de voto (Cumplido / Verificable / No cumplido) en un solo proceso batch
+- **Normalizacion inteligente de puestos**: elimina prefijos (I.E., COL, IED, ITA...), sufijos de bloque/sede y maneja truncacion de 30 caracteres del Excel oficial mediante busqueda fuzzy de dos niveles
+- **Vista por Lider** (Admin/Coordinador): selector de lider con tabla de sus personas y estado de voto calculado dinamicamente
+- **Exportacion de informes Excel** con selector de tipo:
+  - *Personas*: documento, nombres, apellidos, telefono, municipio, zona, puesto, mesa, lider, estado contacto, estado voto, nota
+  - *Resumen por mesa*: departamento, municipio, zona, puesto, mesa, votos candidato, votos lista, personas, efectividad %, estado voto
+- **Filtro por lider** en el informe: Admin/Coordinador pueden descargar el informe filtrado por un lider especifico
+- **Tarjetas de resumen**: votos candidato, votos lista, total votos, mesas cubiertas, personas en mesas, efectividad promedio
+- **Limpiar datos E-14**: borrado completo de resultados de la campana (Admin y Coordinador)
+
 ### Sistema de Usuarios
-- **Roles**: ADMIN (control total) y LIDER (gestion de sus personas)
+- **Roles**: ADMIN (control total), COORDINADOR (gestion de equipo) y LIDER (gestion de sus personas)
 - **Autenticacion JWT** con refresh tokens
 - **Panel de administracion** de usuarios
 
@@ -47,7 +62,7 @@ Elector360-proyecto/
 │       ├── config/            # Constantes y configuracion
 │       ├── controllers/       # Controladores de la API
 │       ├── middleware/        # Auth, validacion, upload
-│       ├── models/            # Modelos MongoDB (Persona, Usuario, ColaConsulta)
+│       ├── models/            # Modelos MongoDB (Persona, Usuario, ColaConsulta, ResultadoMesa)
 │       ├── routes/            # Definicion de rutas
 │       ├── services/          # Logica de negocio
 │       ├── utils/             # Utilidades (ApiError, asyncHandler)
@@ -238,30 +253,59 @@ npm run build
 | POST | `/api/v1/consultas/buscar` | Consultar persona en Registraduria |
 | GET | `/api/v1/consultas/estado/:id` | Estado de una consulta |
 
-### Usuarios (Admin)
+### Resultados E-14
+
+| Metodo | Endpoint | Descripcion | Acceso |
+|--------|----------|-------------|--------|
+| POST | `/api/v1/e14/resultados` | Crear/actualizar resultado de mesa (upsert) | Admin, Coordinador |
+| GET | `/api/v1/e14/resultados` | Listar resultados con filtros (municipio, zona, candidato) | Todos |
+| PUT | `/api/v1/e14/resultados/:id` | Actualizar resultado por ID | Admin, Coordinador |
+| DELETE | `/api/v1/e14/resultados/:id` | Eliminar resultado por ID | Admin |
+| DELETE | `/api/v1/e14/resultados` | Eliminar todos los resultados de la campana | Admin, Coordinador |
+| GET | `/api/v1/e14/analisis` | Analisis cruzado mesas x personas | Todos |
+| GET | `/api/v1/e14/resumen` | Tarjetas resumen general | Todos |
+| GET | `/api/v1/e14/resultados/:id/seguidores` | Personas registradas en una mesa | Todos |
+| POST | `/api/v1/e14/importar-excel` | Importar resultados desde Excel (.xlsx) | Admin, Coordinador, Lider |
+| POST | `/api/v1/e14/verificar-votos` | Verificar cumplimiento cruzando E-14 x Personas | Admin, Coordinador, Lider |
+| GET | `/api/v1/e14/mis-personas` | Personas del lider con estadoVoto calculado | Todos |
+| GET | `/api/v1/e14/exportar-informe` | Descargar informe Excel (`?tipo=personas\|resumen&liderId=`) | Todos |
+
+### Usuarios (Admin/Coordinador)
 
 | Metodo | Endpoint | Descripcion |
 |--------|----------|-------------|
 | GET | `/api/v1/usuarios` | Listar usuarios |
+| POST | `/api/v1/usuarios` | Crear usuario |
+| GET | `/api/v1/usuarios/:id` | Obtener usuario por ID |
 | PUT | `/api/v1/usuarios/:id` | Actualizar usuario |
 | DELETE | `/api/v1/usuarios/:id` | Eliminar usuario |
+| PATCH | `/api/v1/usuarios/:id/toggle-estado` | Activar/desactivar usuario |
+| GET | `/api/v1/usuarios/:id/estadisticas` | Estadisticas del usuario |
 
 ## Roles de Usuario
 
 ### ADMIN
-- Gestion completa de usuarios
+- Gestion completa de usuarios y campanas
 - Importacion masiva de personas desde Excel
 - Control del worker RPA y operaciones masivas
 - Gestion de errores (reintentar/eliminar)
 - Acceso a estadisticas globales
-- Eliminacion de registros
+- Eliminacion de cualquier registro
+- Modulo E-14: acceso total (importar, verificar, limpiar, exportar, vista por lider)
+
+### COORDINADOR
+- Gestion de usuarios de su campana (crear, editar, desactivar lideres)
+- Eliminacion de personas
+- Modulo E-14: importar Excel/PDFs, verificar votos, limpiar resultados, exportar informes
+- Vista por Lider: ver personas de cualquier lider con estado de voto y descargar informe filtrado
+- No tiene acceso al worker RPA ni operaciones masivas
 
 ### LIDER
-- Consulta de votantes (solo los asignados)
-- Gestion de su base de personas
+- Consulta y gestion de sus propias personas
 - Cambio de estado de contacto
 - Exportacion de datos (Excel/CSV)
-- Visualizacion por mesas de votacion
+- Modulo E-14: vista de sus personas con estado de voto, descarga de informe propio
+- Importacion de resultados E-14 desde Excel o PDFs
 
 ## Flujo de Consulta RPA
 

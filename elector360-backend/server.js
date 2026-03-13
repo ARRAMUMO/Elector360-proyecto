@@ -18,6 +18,7 @@ const operacionesMasivasRoutes = require('./src/routes/peracionesMasivas.routes'
 const campanaRoutes = require('./src/routes/campana.routes');
 
 const workerRoutes = require('./src/routes/worker.routes');
+const e14Routes = require('./src/routes/e14.routes');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -87,8 +88,8 @@ app.use('/api/v1/consultas', consultaRoutes);
 app.use('/api/v1/estadisticas', estadisticasRoutes);
 app.use('/api/v1/masivas', operacionesMasivasRoutes);
 app.use('/api/v1/campanas', campanaRoutes);
-// Registrar rutas
 app.use('/api/v1/worker', workerRoutes);
+app.use('/api/v1/e14', e14Routes);
 
 // Ruta 404
 app.use('*', (req, res) => {

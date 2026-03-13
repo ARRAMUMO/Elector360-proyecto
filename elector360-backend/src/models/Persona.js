@@ -87,6 +87,14 @@ const personaSchema = new mongoose.Schema({
     default: 0
   },
 
+  // Estado de voto (resultado cruce E-14 × mesa)
+  estadoVoto: {
+    type: String,
+    enum: ['CUMPLIDO', 'VERIFICABLE', 'NO_CUMPLIDO', 'SIN_DATOS'],
+    default: 'SIN_DATOS'
+  },
+  notaVoto: String,
+
   // Metadata
   origen: {
     type: String,
@@ -115,6 +123,7 @@ personaSchema.index({ 'lider.id': 1 });
 personaSchema.index({ estadoRPA: 1 });
 personaSchema.index({ estadoContacto: 1 });
 personaSchema.index({ confirmado: 1 });
+personaSchema.index({ estadoVoto: 1 });
 personaSchema.index({ searchIndex: 'text' });
 
 // Crear índice de búsqueda antes de guardar
