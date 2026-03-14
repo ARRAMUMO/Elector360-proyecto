@@ -56,7 +56,7 @@ const e14Service = {
       if (filtros.municipio) params.append('municipio', filtros.municipio);
       if (filtros.zona) params.append('zona', filtros.zona);
       if (filtros.candidatoNumero) params.append('candidatoNumero', filtros.candidatoNumero);
-      const res = await api.get(`/e14/analisis?${params}`);
+      const res = await api.get(`/e14/analisis?${params}`, { timeout: 90000 });
       return { success: true, data: res.data.data };
     } catch (err) {
       return { success: false, error: err.response?.data?.error || 'Error al obtener análisis' };
