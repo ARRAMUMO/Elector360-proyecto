@@ -101,6 +101,7 @@ function Personas() {
   const [importFile, setImportFile] = useState(null);
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState(null);
 
   // Debounce del search
   const debouncedSearch = useDebounce(search, 500);
@@ -206,15 +207,16 @@ function Personas() {
     if (!importFile) return;
     setImportando(true);
     setImportResult(null);
+    setImportError(null);
 
     const resultado = await personaService.importarDesdeExcel(importFile);
 
     if (resultado.success) {
-      setImportResult(resultado.data);
-      setAlert({ type: 'success', message: `Importado: ${resultado.data.creadas} creadas, ${resultado.data.actualizadas} actualizadas` });
+      cerrarImportModal();
+      setAlert({ type: 'success', message: `Importación exitosa: ${resultado.data.creadas} creadas, ${resultado.data.actualizadas} actualizadas` });
       cargarPersonas();
     } else {
-      setAlert({ type: 'error', message: resultado.error });
+      setImportError(resultado.error);
     }
 
     setImportando(false);
@@ -231,6 +233,7 @@ function Personas() {
     setShowImportModal(false);
     setImportFile(null);
     setImportResult(null);
+    setImportError(null);
   };
 
   const abrirModal = () => {
@@ -1396,6 +1399,16 @@ function Personas() {
                   </label>
                 )}
               </div>
+
+              {/* Error de importación */}
+              {importError && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                  <svg className="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-red-700">{importError}</p>
+                </div>
+              )}
 
               {/* Botón importar */}
               <button
