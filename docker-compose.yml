@@ -13,7 +13,7 @@ services:
       - PORT=8080
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
     volumes:
-      - ./elector360-backend/uploads:/app/uploads
+      - uploads-data:/app/uploads
       - ./elector360-backend/screenshots:/app/screenshots
       - chrome-profile-data:/app/chrome-profile
     restart: unless-stopped
@@ -26,3 +26,4 @@ services:
 
 volumes:
   chrome-profile-data:
+  uploads-data:
