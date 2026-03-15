@@ -65,7 +65,7 @@ const e14Service = {
 
   async obtenerResumen() {
     try {
-      const res = await api.get('/e14/resumen');
+      const res = await api.get('/e14/resumen', { timeout: 90000 });
       return { success: true, data: res.data.data };
     } catch (err) {
       return { success: false, error: err.response?.data?.error || 'Error al obtener resumen' };
@@ -114,7 +114,7 @@ const e14Service = {
   async misPersonas(liderId = null) {
     try {
       const params = liderId ? `?liderId=${liderId}` : '';
-      const res = await api.get(`/e14/mis-personas${params}`);
+      const res = await api.get(`/e14/mis-personas${params}`, { timeout: 90000 });
       return { success: true, data: res.data.data };
     } catch (err) {
       return { success: false, error: err.response?.data?.error || 'Error al obtener personas' };

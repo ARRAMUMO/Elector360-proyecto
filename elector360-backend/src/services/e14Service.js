@@ -3,6 +3,7 @@ const Persona = require('../models/Persona');
 const ApiError = require('../utils/ApiError');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
+const mongoose = require('mongoose');
 
 /**
  * Genera variantes de un valor numérico con distintos ceros iniciales.
@@ -104,28 +105,82 @@ const extractNum = (val) => {
   return match ? String(parseInt(match[0], 10)) : '0';
 };
 
+// Stop words y prefijos de institución para normalización de puesto
+const STOP_WORDS_PUESTO = new Set([
+  'de', 'del', 'la', 'el', 'los', 'las', 'y', 'e', 'en', 'a', 'al', 'un', 'una',
+  'con', 'por', 'para', 'su', 'sus', 'mi', 'nos'
+]);
+
+const PREFIJOS_INSTITUCION = [
+  'institucion educativa distrital', 'institucion educativa', 'institucion distrital',
+  'institucion', 'concentracion educativa', 'concentracion', 'centro educativo',
+  'centro de educacion', 'colegio distrital', 'colegio', 'normal superior', 'normal',
+  'escuela normal', 'escuela', 'liceo', 'tecnico', 'tecnica', 'tecnologico',
+  'tecnologica', 'ied', 'i e d', 'ie', 'i e', 'ita', 'i t a', 'it', 'i t',
+  'inst', 'col', 'distrital', 'departamental', 'municipal', 'nacional'
+];
+
 /**
  * Normaliza el nombre de un puesto de votación para comparar entre Excel y scraper.
- * Pasos:
- *  1. Quita tildes y pasa a minúsculas
- *  2. Elimina prefijo numérico del scraper: "03 - COL NOMBRE" → "col nombre"
- *  3. Reemplaza todos los puntos por espacio: "COL.MIGUEL" → "COL MIGUEL",
- *     "I.E.D.CALIXTO" → "I E D CALIXTO", "I.E.D. CALIXTO" → "I E D  CALIXTO"
- *  4. Normaliza espacios
- *  5. Elimina prefijos de institución al inicio (col, colegio, ied, ie, it, ita, inst, …)
- *  6. Elimina sufijos de bloque/sede: "(BLO...", "BLQ1", "BLOQUE 2", "SEDE A"
+ * - Quita tildes, pasa a minúsculas
+ * - Elimina prefijo numérico: "03 - COL X" → "col x"
+ * - Elimina TODA puntuación (puntos, guiones, paréntesis, etc.)
+ * - Elimina prefijos de institución (col, colegio, ied, ie, etc.)
+ * - Elimina sufijos (bloque, sede, etc.)
+ * - Elimina palabras de 1 carácter (abreviaciones: "s.", "n.", etc.)
+ * - Elimina stop words (de, del, la, el, etc.)
  */
 const normalizarPuesto = (nombre) => {
-  return sinTildes((nombre || '').toLowerCase().trim())
-    .replace(/^\d+\s*-\s*/, '')              // quita "03 - "
-    .replace(/\./g, ' ')                     // puntos → espacios: "i.e.d." → "i e d "
-    .replace(/\s+/g, ' ').trim()             // normaliza espacios
-    .replace(/^(?:col|colegio|i e d|ied|i e|ie|i t a|ita|i t|it|institucion educativa distrital|institucion educativa|institucion distrital|institucion|inst|liceo|escuela|centro educativo|concentracion)\s+/, '')
-    .replace(/^distrital\s+/, '')            // quita "distrital " residual (de "I.E. DISTRITAL X")
-    .replace(/\s*\(.*$/, '')                 // quita "(bloque 1)", "(blo..." etc.
-    .replace(/\s+(?:blq|bloque)\s*\d*\s*$/i, '')  // quita "blq1", "bloque 2" al final
-    .replace(/\s+sede\s+\w+\s*$/i, '')       // quita "sede a", "sede norte" al final
-    .replace(/\s+/g, ' ').trim();
+  let s = sinTildes((nombre || '').toLowerCase().trim());
+
+  // Quita prefijo numérico "03 - "
+  s = s.replace(/^\d+\s*[-–]\s*/, '');
+
+  // Quita TODA puntuación y caracteres especiales (incluye puntos, guiones, #, etc.)
+  s = s.replace(/[^a-z0-9\s]/g, ' ');
+
+  // Normaliza espacios
+  s = s.replace(/\s+/g, ' ').trim();
+
+  // Quita prefijos de institución al inicio (orden importa: más largo primero)
+  for (const pref of PREFIJOS_INSTITUCION) {
+    if (s.startsWith(pref + ' ') || s === pref) {
+      s = s.slice(pref.length).trim();
+      break;
+    }
+  }
+
+  // Quita sufijos: "(bloque 1)", "bloque 2", "sede a", "no 1"
+  s = s.replace(/\s*\(.*$/, '');
+  s = s.replace(/\s+(?:blq|bloque)\s*\d*\s*$/, '');
+  s = s.replace(/\s+sede\s+\w+\s*$/, '');
+  s = s.replace(/\s+n[uo]?\s*\d+\s*$/, '');
+
+  // Filtra palabras: quita palabras de 1 char y stop words
+  s = s.split(' ')
+    .filter(w => w.length > 1 && !STOP_WORDS_PUESTO.has(w))
+    .join(' ')
+    .trim();
+
+  return s;
+};
+
+/**
+ * Devuelve el set de palabras de un puesto normalizado (para match por intersección)
+ */
+const palabrasPuesto = (nombre) => new Set(normalizarPuesto(nombre).split(' ').filter(Boolean));
+
+/**
+ * Score de similitud entre dos nombres de puesto (0-1).
+ * Usa intersección de palabras: palabras compartidas / máximo de ambos conjuntos.
+ */
+const similitudPuesto = (a, b) => {
+  const wa = palabrasPuesto(a);
+  const wb = palabrasPuesto(b);
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let comunes = 0;
+  for (const w of wa) if (wb.has(w)) comunes++;
+  return comunes / Math.max(wa.size, wb.size);
 };
 
 /**
@@ -478,10 +533,11 @@ const verificarVotosMesas = async (campanaId) => {
     return { totalMesas: 0, mesasConPersonas: 0, personasActualizadas: 0, resumen: { cumplido: 0, verificable: 0, noCumplido: 0, sinDatos: 0 } };
   }
 
-  // Construir mapa exacto y mapa fuzzy (15-char puesto) para manejar truncación Excel
-  const personaMap = new Map();
-  // personaMap15: key15 → { ids, exactKeys } — para fallback fuzzy sin ambigüedad
-  const personaMap15 = new Map();
+  // Construir mapa exacto, fuzzy-15 y mapa de similitud por palabras
+  const personaMap = new Map();   // normKey → [ids]
+  const personaMap15 = new Map(); // key15 → { ids, exactKeys }
+  // Para similitud: mun|mesa → [{ normPuesto, ids }]
+  const personaMapMunMesa = new Map();
 
   for (const p of todasPersonas) {
     const key = normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa);
@@ -492,13 +548,19 @@ const verificarVotosMesas = async (campanaId) => {
     // Clave fuzzy: mismos dep|mun|mesa pero puesto truncado a 15 chars
     const dep = sinTildes((p.puesto?.departamento || '').toLowerCase().trim());
     const mun = sinTildes((p.puesto?.municipio || '').toLowerCase().trim());
-    const p15 = normalizarPuesto(p.puesto?.nombrePuesto).slice(0, 15);
+    const normP = normalizarPuesto(p.puesto?.nombrePuesto);
+    const p15 = normP.slice(0, 15);
     const m = extractNum(p.puesto?.mesa);
     const key15 = `${dep}|${mun}|${p15}|${m}`;
     if (!personaMap15.has(key15)) personaMap15.set(key15, { ids: [], exactKeys: new Set() });
     const e15 = personaMap15.get(key15);
     e15.ids.push(p._id);
     e15.exactKeys.add(key);
+
+    // Mapa por mun|mesa para fallback por similitud de palabras
+    const munMesaKey = `${mun}|${m}`;
+    if (!personaMapMunMesa.has(munMesaKey)) personaMapMunMesa.set(munMesaKey, []);
+    personaMapMunMesa.get(munMesaKey).push({ normPuesto: normP, ids: arr });
   }
 
   let mesasConPersonas = 0;
@@ -510,7 +572,7 @@ const verificarVotosMesas = async (campanaId) => {
     const key = normKey(r.departamento, r.municipio, r.zona, r.nombrePuesto, r.mesa);
     let ids = personaMap.get(key) || [];
 
-    // Fallback fuzzy si no hay match exacto (maneja truncación de 30 chars en Excel)
+    // Fallback 1: fuzzy-15 (maneja truncación Excel 30 chars)
     if (ids.length === 0) {
       const dep = sinTildes((r.departamento || '').toLowerCase().trim());
       const mun = sinTildes((r.municipio || '').toLowerCase().trim());
@@ -518,8 +580,23 @@ const verificarVotosMesas = async (campanaId) => {
       const m = extractNum(r.mesa);
       const key15 = `${dep}|${mun}|${p15}|${m}`;
       const e15 = personaMap15.get(key15);
-      // Solo usar fuzzy si no hay ambigüedad (un único puesto normalizado distinto)
       if (e15 && e15.exactKeys.size === 1) ids = e15.ids;
+    }
+
+    // Fallback 2: similitud de palabras (maneja abreviaciones: "S." vs "SANTA", "I.E." vs "COLEGIO")
+    if (ids.length === 0) {
+      const mun = sinTildes((r.municipio || '').toLowerCase().trim());
+      const m = extractNum(r.mesa);
+      const munMesaKey = `${mun}|${m}`;
+      const candidatos = personaMapMunMesa.get(munMesaKey) || [];
+      let mejorScore = 0;
+      let mejorIds = [];
+      for (const c of candidatos) {
+        const score = similitudPuesto(r.nombrePuesto, c.normPuesto);
+        if (score > mejorScore) { mejorScore = score; mejorIds = c.ids; }
+      }
+      // Umbral: al menos 60% de palabras en común
+      if (mejorScore >= 0.6) ids = mejorIds;
     }
 
     const N = ids.length;

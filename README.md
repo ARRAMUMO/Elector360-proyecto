@@ -13,12 +13,13 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Cambio rapido de estado** de contacto (Pendiente, Contactado, Confirmado, No Contactado)
 
 ### Consulta RPA (Automatizacion)
-- **Consulta individual** por cedula en la Registraduria Nacional
+- **Consulta individual** por cedula en la Registraduria Nacional (`https://wsp.registraduria.gov.co/censo/consultar`)
 - **Consulta masiva desde Excel** - sube un archivo con cedulas y el sistema las procesa automaticamente
 - **Actualizacion masiva** de toda la base de datos
 - **3 reintentos automaticos** por consulta antes de marcar como error
 - **Circuit breaker** para proteger contra fallos del servicio externo
 - **Pool de workers** (hasta 5 navegadores simultaneos) con Puppeteer + 2Captcha
+- **Modo manual**: si no hay API key de 2Captcha configurada, el sistema espera a que el usuario resuelva el captcha manualmente y detecta automaticamente cuando aparecen los resultados
 
 ### Operaciones Masivas
 - **Carga de Excel** con cedulas para consulta o actualizacion
@@ -45,7 +46,7 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
   - *Personas*: documento, nombres, apellidos, telefono, municipio, zona, puesto, mesa, lider, estado contacto, estado voto, nota
   - *Resumen por mesa*: departamento, municipio, zona, puesto, mesa, votos candidato, votos lista, personas, efectividad %, estado voto
 - **Filtro por lider** en el informe: Admin/Coordinador pueden descargar el informe filtrado por un lider especifico
-- **Tarjetas de resumen**: votos candidato, votos lista, total votos, mesas cubiertas, personas en mesas, efectividad promedio
+- **Tarjetas de resumen**: total votos candidato, votos en mesas cumplidas, votos en mesas verificables, votos en mesas no cumplidas (con conteo de mesas como subtitulo)
 - **Limpiar datos E-14**: borrado completo de resultados de la campana (Admin y Coordinador)
 
 ### Sistema de Usuarios
@@ -320,13 +321,15 @@ npm run build
           │
 5. Pool de workers (hasta 5 Puppeteer simultaneos)
           │
-6. Navegar a Registraduria Nacional
+6. Navegar a wsp.registraduria.gov.co/censo/consultar
           │
-7. Resolver reCAPTCHA v2 con 2Captcha
+7. Llenar formulario NUIP/cedula
           │
-8. Extraer datos electorales (depto, municipio, puesto, mesa)
+8. Resolver reCAPTCHA v2 (2Captcha API o modo manual)
           │
-9. Actualizar Persona en base de datos
+9. Extraer datos electorales (depto, municipio, puesto, mesa)
+          │
+10. Actualizar Persona en base de datos
           │
      ┌────┴────┐
   Exito      Error

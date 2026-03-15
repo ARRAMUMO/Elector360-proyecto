@@ -262,15 +262,79 @@ class RegistraduriaScrap {
    */
   async llenarFormulario(documento) {
     try {
-      // Selector del campo de documento (actualizado para nueva página)
-      const documentoSelector = '#document';
+      // Selectores candidatos para el campo de documento
+      const selectoresCandidatos = [
+        'input[name="nuip"]',
+        'input[name="cedula"]',
+        'input[name="documento"]',
+        'input[name="identificacion"]',
+        'input[name="numero"]',
+        '#nuip',
+        '#cedula',
+        '#documento',
+        '#document',
+        'input[placeholder*="número"]',
+        'input[placeholder*="cedula"]',
+        'input[placeholder*="cédula"]',
+        'input[placeholder*="identificacion"]',
+        'input[placeholder*="puntos"]',
+        'input[type="number"]',
+        'input[type="text"]'
+      ];
 
-      // Esperar a que el campo esté disponible
+      let documentoSelector = null;
+      for (const sel of selectoresCandidatos) {
+        try {
+          const existe = await this.page.$(sel);
+          if (existe) { documentoSelector = sel; break; }
+        } catch (_) {}
+      }
+
+      // Último recurso: buscar cualquier input visible en el formulario
+      if (!documentoSelector) {
+        documentoSelector = await this.page.evaluate(() => {
+          const inputs = Array.from(document.querySelectorAll('input'));
+          const visible = inputs.find(el =>
+            el.offsetParent !== null &&
+            !['hidden', 'submit', 'button', 'checkbox', 'radio'].includes(el.type)
+          );
+          if (!visible) return null;
+          if (visible.id) return `#${visible.id}`;
+          if (visible.name) return `input[name="${visible.name}"]`;
+          return null;
+        });
+      }
+
+      if (!documentoSelector) {
+        throw new Error('No se encontró el campo de documento en la página');
+      }
+
+      console.log(`📝 Usando selector: ${documentoSelector}`);
+
       await this.page.waitForSelector(documentoSelector, { timeout: 10000 });
-
-      // Limpiar el campo por si tiene valor
       await this.cursor.click(documentoSelector);
       await helpers.typeHuman(this.page, documentoSelector, documento, config);
+
+      // Verificar que el valor quedó escrito; si no, usar setter nativo (para Angular/React)
+      const valorActual = await this.page.evaluate((sel) =>
+        document.querySelector(sel)?.value || '', documentoSelector
+      );
+      if (valorActual !== documento) {
+        console.log(`⚠️  typeHuman no escribió el valor (obtenido: "${valorActual}"), usando setter nativo...`);
+        await this.page.evaluate((sel, val) => {
+          const input = document.querySelector(sel);
+          if (!input) return;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          if (setter) setter.call(input, val);
+          input.dispatchEvent(new Event('input',  { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('blur',   { bubbles: true }));
+        }, documentoSelector, documento);
+        console.log('✅ Valor forzado via setter nativo');
+      }
+
+      // Seleccionar "lugar de votación actual" en el dropdown si existe
+      await this._seleccionarEleccion();
 
       // Scroll aleatorio para parecer humano
       await helpers.randomScroll(this.page);
@@ -278,6 +342,38 @@ class RegistraduriaScrap {
       console.log('✅ Formulario llenado');
     } catch (error) {
       throw new Error(`Error llenando formulario: ${error.message}`);
+    }
+  }
+
+  /**
+   * Seleccionar opción en el dropdown "Seleccione la elección" si existe
+   */
+  async _seleccionarEleccion() {
+    try {
+      const selectEl = await this.page.$('select');
+      if (!selectEl) return; // No hay dropdown, continuar
+
+      // Obtener las opciones disponibles
+      const opciones = await this.page.evaluate(() => {
+        const sel = document.querySelector('select');
+        if (!sel) return [];
+        return Array.from(sel.options).map(o => ({ value: o.value, text: o.text.trim() }));
+      });
+
+      if (opciones.length === 0) return;
+
+      // Preferir "lugar de votación actual" o la primera opción con valor
+      const opcionActual = opciones.find(o =>
+        /actual|congreso|2026/i.test(o.text) && o.value
+      ) || opciones.find(o => o.value) || opciones[0];
+
+      if (opcionActual && opcionActual.value) {
+        await this.page.select('select', opcionActual.value);
+        console.log(`📋 Elección seleccionada: ${opcionActual.text}`);
+        await helpers.randomDelay(500, 1000);
+      }
+    } catch (e) {
+      // Ignorar errores en el dropdown — no es crítico
     }
   }
 
@@ -325,6 +421,12 @@ class RegistraduriaScrap {
         return true;
       }
       console.log('🔄 Click natural no fue suficiente, usando 2captcha...');
+
+      // Si no hay API key configurada, pasar DIRECTO a modo manual sin esperar 2captcha
+      if (!config.captcha.apiKey && !config.isProduction) {
+        console.log('⚠️  Sin CAPTCHA_API_KEY — pasando directamente a modo manual');
+        return await this._esperarCaptchaManual();
+      }
 
       // 2. Resolver con el servicio apropiado
       const pageUrl = this.page.url();
@@ -424,25 +526,28 @@ class RegistraduriaScrap {
       return false;
     }
 
-    console.log('👆 MODO MANUAL: Resuelve el captcha manualmente en el navegador');
-    console.log(`⏳ Esperando (${timeout / 1000}s máx)...`);
+    console.log('👆 MODO MANUAL: Resuelve el captcha y haz clic en CONSULTAR');
+    console.log(`⏳ Esperando resultado en pantalla (${timeout / 1000}s máx)...`);
 
     try {
+      // Esperar a que aparezca el resultado (tabla con DEPARTAMENTO/MUNICIPIO)
+      // O un mensaje de error ("no encontrado", "no existe", etc.)
       await this.page.waitForFunction(
         () => {
-          const buttons = Array.from(document.querySelectorAll('button'));
-          const submitButton = buttons.find(btn => {
-            const txt = btn.textContent.trim();
-            return txt === 'Consultar' || txt === 'CONSULTAR';
-          });
-          return submitButton && !submitButton.disabled;
+          const body = document.body.innerText.toLowerCase();
+          const tieneResultado =
+            (body.includes('departamento') && body.includes('municipio') && body.includes('mesa')) ||
+            body.includes('nuip');
+          const tieneError =
+            /no se encontr|no existe|no aparece|no censado|no fue encontrado/i.test(body);
+          return tieneResultado || tieneError;
         },
         { timeout }
       );
-      console.log('✅ Captcha resuelto manualmente');
+      console.log('✅ Resultado detectado tras resolución manual');
       return true;
     } catch (e) {
-      console.log('❌ Timeout esperando resolución manual');
+      console.log('❌ Timeout esperando resultado manual');
       return false;
     }
   }
@@ -660,11 +765,12 @@ class RegistraduriaScrap {
       // Esperar a que el contenido de resultados aparezca en el DOM
       await this.page.waitForFunction(
         () => {
-          const bodyText = document.body.innerText;
+          const bodyText = document.body.innerText.toLowerCase();
           const tieneResultados =
-            (bodyText.includes('Departamento') && bodyText.includes('Municipio')) ||
-            (bodyText.includes('Puesto') && bodyText.includes('Mesa')) ||
-            bodyText.includes('C.C.') ||
+            (bodyText.includes('departamento') && bodyText.includes('municipio')) ||
+            (bodyText.includes('puesto') && bodyText.includes('mesa')) ||
+            bodyText.includes('nuip') ||
+            bodyText.includes('c.c.') ||
             bodyText.includes('lugar de votación') ||
             bodyText.includes('puesto de votación') ||
             bodyText.includes('mesa de votación');
@@ -675,9 +781,7 @@ class RegistraduriaScrap {
             bodyText.includes('no censado') ||
             bodyText.includes('no fue encontrado') ||
             bodyText.includes('no está registrado') ||
-            bodyText.includes('no se encontró') ||
-            bodyText.includes('No se encontró') ||
-            bodyText.includes('No fue encontrado');
+            bodyText.includes('no se encontró');
           return tieneResultados || tieneError;
         },
         { timeout: 30000 }
@@ -712,13 +816,11 @@ class RegistraduriaScrap {
         return {
           bodyText: bodyText.substring(0, 800),
           hasTable: !!document.querySelector('table'),
-          hasNoEncontrado: bodyText.includes('No se encontró') ||
-                           bodyText.includes('no existe') ||
-                           bodyText.includes('no encontrado'),
-          hasDepartamento: bodyText.includes('Departamento'),
-          hasMunicipio: bodyText.includes('Municipio'),
-          hasPuesto: bodyText.includes('Puesto'),
-          hasMesa: bodyText.includes('Mesa')
+          hasNoEncontrado: /no se encontr|no existe|no encontrado/i.test(bodyText),
+          hasDepartamento: /departamento/i.test(bodyText),
+          hasMunicipio: /municipio/i.test(bodyText),
+          hasPuesto: /puesto/i.test(bodyText),
+          hasMesa: /\bmesa\b/i.test(bodyText)
         };
       });
 
@@ -741,8 +843,6 @@ class RegistraduriaScrap {
       console.log('📄 Texto de página (primeros 500 chars):', rawText.substring(0, 500));
 
       const datos = await this.page.evaluate(() => {
-        const bodyText = document.body.innerText;
-
         let documento = '';
         let departamento = '';
         let municipio = '';
@@ -751,83 +851,77 @@ class RegistraduriaScrap {
         let mesa = '';
         let zona = '';
 
-        // Buscar C.C. número
-        const ccMatch = bodyText.match(/C\.C\.\s*(\d+)/);
-        if (ccMatch) documento = ccMatch[1];
+        // ── Método 1: tabla HTML (nueva página wsp.registraduria.gov.co) ──────
+        // Estructura: <th>NUIP</th><th>DEPARTAMENTO</th><th>MUNICIPIO</th>
+        //             <th>PUESTO</th><th>DIRECCIÓN</th><th>MESA</th>
+        const table = document.querySelector('table');
+        if (table) {
+          const headers = Array.from(table.querySelectorAll('th')).map(th =>
+            th.textContent.trim().toUpperCase()
+          );
+          // Obtener solo las celdas TD de la primera fila de datos
+          const dataRow = table.querySelector('tbody tr') || table.querySelector('tr:nth-child(2)');
+          const cells = dataRow
+            ? Array.from(dataRow.querySelectorAll('td')).map(td => td.textContent.trim())
+            : Array.from(table.querySelectorAll('td')).map(td => td.textContent.trim());
 
-        // Método 1: Extraer de elementos HTML directamente (más confiable)
-        // Buscar todos los textos en el DOM de forma estructurada
-        const allElements = document.querySelectorAll('p, span, div, td, th, h1, h2, h3, h4, h5, h6, label, strong, b');
-        const textos = [];
-        allElements.forEach(el => {
-          const text = el.textContent.trim();
-          if (text.length > 0 && text.length < 200) {
-            textos.push(text);
-          }
-        });
+          const idx = (name) => headers.findIndex(h => h.includes(name));
 
-        // Método 2: Buscar por líneas de texto
-        const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+          const iNuip        = idx('NUIP');
+          const iDepto       = idx('DEPART');
+          const iMun         = idx('MUNIC');
+          const iPuesto      = idx('PUESTO');
+          const iDir         = idx('DIRECC');
+          const iMesa        = idx('MESA');
+          const iZona        = idx('ZONA');
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const nextLine = (lines[i + 1] || '').trim();
+          if (iNuip  >= 0 && cells[iNuip])   documento    = cells[iNuip];
+          if (iDepto >= 0 && cells[iDepto])   departamento = cells[iDepto];
+          if (iMun   >= 0 && cells[iMun])     municipio    = cells[iMun];
+          if (iPuesto >= 0 && cells[iPuesto]) puesto       = cells[iPuesto];
+          if (iDir   >= 0 && cells[iDir])     direccion    = cells[iDir];
+          if (iMesa  >= 0 && cells[iMesa])    mesa         = cells[iMesa];
+          if (iZona  >= 0 && cells[iZona])    zona         = cells[iZona];
+        }
 
-          // "Puesto" como etiqueta, valor en siguiente línea
-          if (/^Puesto$/i.test(line) || line === 'Puesto') {
-            if (nextLine && !/^(Mesa|Zona|Departamento|Municipio|Dirección)$/i.test(nextLine)) {
-              puesto = nextLine;
+        // ── Método 2: fallback por líneas (página antigua / cambios futuros) ──
+        if (!departamento && !municipio) {
+          const bodyText = document.body.innerText;
+          const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+          // C.C. número
+          const ccMatch = bodyText.match(/C\.C\.\s*(\d+)/);
+          if (ccMatch) documento = ccMatch[1];
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const next = (lines[i + 1] || '').trim();
+
+            if (/^Puesto$/i.test(line) && next && !/^(Mesa|Zona|Departamento|Municipio|Dirección)$/i.test(next))
+              puesto = next;
+            if (/^Mesa$/i.test(line) && /^\d+/.test(next))
+              mesa = next;
+            if (/^Zona$/i.test(line) && next && !/^(Departamento|Municipio|Dirección|Puesto|Mesa)$/i.test(next))
+              zona = next;
+            if (/^Departamento$/i.test(line) && next && !/^(Municipio|Dirección|Puesto|Mesa|Zona)$/i.test(next))
+              departamento = next;
+            if (/^Municipio$/i.test(line) && next && !/^(Departamento|Dirección|Puesto|Mesa|Zona)$/i.test(next))
+              municipio = next;
+            if (/^Direcci[oó]n$/i.test(line) && next && !/^(Departamento|Municipio|Puesto|Mesa|Zona|Consultar)$/i.test(next))
+              direccion = next;
+
+            if (line.includes('Puesto') && line.includes('Mesa') && line.includes('Zona')) {
+              const vals = next.split(/\t+|\s{3,}/);
+              if (vals[0] && !puesto)  puesto = vals[0].trim();
+              if (vals[1] && !mesa)    mesa   = vals[1].trim();
+              if (vals[2] && !zona)    zona   = vals[2].trim();
             }
-          }
-
-          // "Mesa" como etiqueta
-          if (/^Mesa$/i.test(line) || line === 'Mesa') {
-            if (nextLine && /^\d+/.test(nextLine)) {
-              mesa = nextLine;
+            if (line.includes('Departamento') && line.includes('Municipio') && line.includes('Direcci')) {
+              const vals = next.split(/\t+|\s{3,}/);
+              if (vals[0] && !departamento) departamento = vals[0].trim();
+              if (vals[1] && !municipio)    municipio    = vals[1].trim();
+              if (vals[2] && !direccion)    direccion    = vals[2].trim();
             }
-          }
-
-          // "Zona" como etiqueta
-          if (/^Zona$/i.test(line) || line === 'Zona') {
-            if (nextLine && !/^(Departamento|Municipio|Dirección|Puesto|Mesa)$/i.test(nextLine)) {
-              zona = nextLine;
-            }
-          }
-
-          // "Departamento" como etiqueta
-          if (/^Departamento$/i.test(line) || line === 'Departamento') {
-            if (nextLine && !/^(Municipio|Dirección|Puesto|Mesa|Zona)$/i.test(nextLine)) {
-              departamento = nextLine;
-            }
-          }
-
-          // "Municipio" como etiqueta
-          if (/^Municipio$/i.test(line) || line === 'Municipio') {
-            if (nextLine && !/^(Departamento|Dirección|Puesto|Mesa|Zona)$/i.test(nextLine)) {
-              municipio = nextLine;
-            }
-          }
-
-          // "Dirección" como etiqueta
-          if (/^Direcci[oó]n$/i.test(line) || line === 'Dirección') {
-            if (nextLine && !/^(Departamento|Municipio|Puesto|Mesa|Zona|Consultar)$/i.test(nextLine)) {
-              direccion = nextLine;
-            }
-          }
-
-          // Formato en línea: "Puesto Mesa Zona" en una línea, valores en la siguiente
-          if (line.includes('Puesto') && line.includes('Mesa') && line.includes('Zona')) {
-            const vals = nextLine.split(/\t+|\s{3,}/);
-            if (vals.length >= 1 && !puesto) puesto = vals[0].trim();
-            if (vals.length >= 2 && !mesa) mesa = vals[1].trim();
-            if (vals.length >= 3 && !zona) zona = vals[2].trim();
-          }
-
-          if (line.includes('Departamento') && line.includes('Municipio') && line.includes('Direcci')) {
-            const vals = nextLine.split(/\t+|\s{3,}/);
-            if (vals.length >= 1 && !departamento) departamento = vals[0].trim();
-            if (vals.length >= 2 && !municipio) municipio = vals[1].trim();
-            if (vals.length >= 3 && !direccion) direccion = vals[2].trim();
           }
         }
 
@@ -835,11 +929,11 @@ class RegistraduriaScrap {
           documento: documento || '',
           datosElectorales: {
             departamento: departamento || '',
-            municipio: municipio || '',
-            puestoVotacion: puesto || '',
-            direccion: direccion || '',
-            mesa: mesa || '',
-            zona: zona || ''
+            municipio:    municipio    || '',
+            puestoVotacion: puesto    || '',
+            direccion:    direccion   || '',
+            mesa:         mesa        || '',
+            zona:         zona        || ''
           }
         };
       });

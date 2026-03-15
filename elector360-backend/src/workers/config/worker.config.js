@@ -45,7 +45,7 @@ module.exports = {
 
   // URLs
   urls: {
-    registraduria: 'https://eleccionescolombia.registraduria.gov.co/identificacion'
+    registraduria: 'https://wsp.registraduria.gov.co/censo/consultar'
   },
 
   // Configuración de reintentos

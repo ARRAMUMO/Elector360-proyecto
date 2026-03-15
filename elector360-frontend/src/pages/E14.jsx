@@ -707,50 +707,31 @@ export default function E14() {
       )}
 
       {/* Tarjetas de resumen — solo para ADMIN/COORDINADOR */}
-      {!esLider && resumen && !modoImport && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* Votos candidato */}
+      {!esLider && !modoImport && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Total votos candidato */}
           <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos candidato</p>
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Total votos candidato</p>
             <p className="text-3xl font-bold text-blue-600 mt-1">{(resumen.totalVotosCandidato || 0).toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">votos obtenidos</p>
           </div>
-          {/* Votos lista */}
-          <div className="bg-white rounded-xl border-l-4 border-indigo-400 border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos por lista</p>
-            <p className="text-3xl font-bold text-indigo-600 mt-1">{(resumen.totalVotosLista || 0).toLocaleString()}</p>
+          {/* Cumplido */}
+          <div className="bg-white rounded-xl border-l-4 border-green-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos cumplidos</p>
+            <p className="text-3xl font-bold text-green-600 mt-1">{analisis.filter(a => a.estadoMesa === 'CUMPLIDO').reduce((s, a) => s + (a.votosObtenidos || 0), 0).toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{analisis.filter(a => a.estadoMesa === 'CUMPLIDO').length} mesas</p>
           </div>
-          {/* Total votos */}
-          <div className="bg-white rounded-xl border-l-4 border-violet-500 border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Total votos</p>
-            <p className="text-3xl font-bold text-violet-600 mt-1">{((resumen.totalVotosCandidato || 0) + (resumen.totalVotosLista || 0)).toLocaleString()}</p>
+          {/* Verificable */}
+          <div className="bg-white rounded-xl border-l-4 border-yellow-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos verificables</p>
+            <p className="text-3xl font-bold text-yellow-600 mt-1">{analisis.filter(a => a.estadoMesa === 'VERIFICABLE').reduce((s, a) => s + (a.votosObtenidos || 0), 0).toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{analisis.filter(a => a.estadoMesa === 'VERIFICABLE').length} mesas</p>
           </div>
-          {/* Mesas */}
-          <div className="bg-white rounded-xl border-l-4 border-gray-400 border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Mesas con E-14</p>
-            <p className="text-3xl font-bold text-gray-800 mt-1">{resumen.mesasCubiertas}</p>
-          </div>
-          {/* Seguidores */}
-          <div className="bg-white rounded-xl border-l-4 border-teal-500 border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Personas en mesas</p>
-            <p className="text-3xl font-bold text-teal-600 mt-1">{(resumen.totalSeguidores || 0).toLocaleString()}</p>
-          </div>
-          {/* Efectividad */}
-          <div className="bg-white rounded-xl border-l-4 border-gray-300 border border-gray-200 p-4 shadow-sm" style={{
-            borderLeftColor: resumen.efectividadPromedio === null ? '#d1d5db'
-              : resumen.efectividadPromedio >= 70 ? '#16a34a'
-              : resumen.efectividadPromedio >= 40 ? '#ca8a04'
-              : '#dc2626'
-          }}>
-            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Efectividad</p>
-            <p className={`text-3xl font-bold mt-1 ${
-              resumen.efectividadPromedio === null ? 'text-gray-400'
-              : resumen.efectividadPromedio >= 70 ? 'text-green-600'
-              : resumen.efectividadPromedio >= 40 ? 'text-yellow-600'
-              : 'text-red-600'
-            }`}>
-              {resumen.efectividadPromedio !== null ? `${resumen.efectividadPromedio}%` : '—'}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">candidato / personas</p>
+          {/* No cumplido */}
+          <div className="bg-white rounded-xl border-l-4 border-orange-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos no cumplidos</p>
+            <p className="text-3xl font-bold text-orange-600 mt-1">{analisis.filter(a => a.estadoMesa === 'NO_CUMPLIDO').reduce((s, a) => s + (a.votosObtenidos || 0), 0).toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{analisis.filter(a => a.estadoMesa === 'NO_CUMPLIDO').length} mesas</p>
           </div>
         </div>
       )}
