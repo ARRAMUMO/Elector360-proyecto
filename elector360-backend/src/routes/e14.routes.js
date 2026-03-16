@@ -34,6 +34,9 @@ router.post('/verificar-votos', requireLider, e14Controller.verificarVotos);
 // Vista del líder: sus personas con estadoVoto
 router.get('/mis-personas', requireLider, e14Controller.getMisPersonas);
 
+// Informe de líder: mesas agrupadas con votos y otros líderes compartiendo mesa
+router.get('/informe-lider', requireLider, e14Controller.getInformeLider);
+
 // Exportar informe Excel
 router.get('/exportar-informe', requireLider, e14Controller.exportarInforme);
 

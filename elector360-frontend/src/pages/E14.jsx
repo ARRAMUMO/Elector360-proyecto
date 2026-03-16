@@ -200,6 +200,236 @@ function VistaLider({ liderId, onExportar, descargando }) {
   );
 }
 
+// ─── Vista Informe Líder (agrupado por mesa) ────────────────────────────────
+
+function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExportar, descargando }) {
+  const [datos, setDatos] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filtro, setFiltro] = useState('TODOS');
+  const [expandida, setExpandida] = useState(null);
+
+  useEffect(() => {
+    if (!liderId) return;
+    setLoading(true);
+    setExpandida(null);
+    e14Service.informeLider(liderId).then(res => {
+      if (res.success) setDatos(res.data);
+      setLoading(false);
+    });
+  }, [liderId]);
+
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
+  if (!datos) return <div className="text-center py-10 text-gray-400 text-sm">Error al cargar datos</div>;
+
+  const { mesas, resumen } = datos;
+  const mesasFiltradas = filtro === 'TODOS' ? mesas : mesas.filter(m => m.estadoMesa === filtro);
+
+  // Conteos por persona (como producción)
+  const todasPersonas = mesas.flatMap(m => m.personas);
+  const pCumplido    = todasPersonas.filter(p => p.estadoVoto === 'CUMPLIDO').length;
+  const pVerificable = todasPersonas.filter(p => p.estadoVoto === 'VERIFICABLE').length;
+  const pNoCumplido  = todasPersonas.filter(p => p.estadoVoto !== 'CUMPLIDO' && p.estadoVoto !== 'VERIFICABLE').length;
+
+  const estadoCfg = {
+    CUMPLIDO:    { label: 'Cumplido',    bg: 'bg-green-100',  text: 'text-green-800',  dot: 'bg-green-500',  border: 'border-green-300'  },
+    VERIFICABLE: { label: 'Verificable', bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500', border: 'border-yellow-300' },
+    NO_CUMPLIDO: { label: 'No cumplido', bg: 'bg-orange-100', text: 'text-orange-800', dot: 'bg-orange-500', border: 'border-orange-300' },
+  };
+
+  // Totales de campaña para el banner
+  const cTotal = campanaResumen?.totalVotosCandidato ?? 0;
+  const cCumplido = campanaAnalisis ? campanaAnalisis.filter(a => a.estadoMesa === 'CUMPLIDO').reduce((s, a) => s + (a.votosObtenidos || 0), 0) : 0;
+  const cVerificable = campanaAnalisis ? campanaAnalisis.filter(a => a.estadoMesa === 'VERIFICABLE').reduce((s, a) => s + (a.votosObtenidos || 0), 0) : 0;
+  const cNoCumplido = campanaAnalisis ? campanaAnalisis.filter(a => a.estadoMesa === 'NO_CUMPLIDO').reduce((s, a) => s + (a.votosObtenidos || 0), 0) : 0;
+
+  return (
+    <div className="space-y-5">
+      {/* Banner totales de campaña */}
+      {campanaResumen && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Total votos candidato</p>
+            <p className="text-3xl font-bold text-blue-600 mt-1">{cTotal.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">votos obtenidos</p>
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-green-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos cumplidos</p>
+            <p className="text-3xl font-bold text-green-600 mt-1">{cCumplido.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{campanaAnalisis?.filter(a => a.estadoMesa === 'CUMPLIDO').length || 0} mesas</p>
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-yellow-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos verificables</p>
+            <p className="text-3xl font-bold text-yellow-600 mt-1">{cVerificable.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{campanaAnalisis?.filter(a => a.estadoMesa === 'VERIFICABLE').length || 0} mesas</p>
+          </div>
+          <div className="bg-white rounded-xl border-l-4 border-orange-500 border border-gray-200 p-4 shadow-sm">
+            <p className="text-xs text-gray-500 font-medium uppercase tracking-wide leading-tight">Votos no cumplidos</p>
+            <p className="text-3xl font-bold text-orange-600 mt-1">{cNoCumplido.toLocaleString()}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{campanaAnalisis?.filter(a => a.estadoMesa === 'NO_CUMPLIDO').length || 0} mesas</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tarjetas resumen — conteo por persona (igual que producción) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { key: 'TODOS',       label: 'Total',       valor: resumen.totalPersonas, sub: `${resumen.totalMesas} mesas`,        color: 'border-blue-300 bg-blue-50',    text: 'text-blue-700'   },
+          { key: 'CUMPLIDO',    label: 'Cumplido',    valor: pCumplido,             sub: `${resumen.totalVotos} votos totales`, color: 'border-green-300 bg-green-50',  text: 'text-green-700'  },
+          { key: 'VERIFICABLE', label: 'Verificable', valor: pVerificable,          sub: 'votos < personas',                   color: 'border-yellow-300 bg-yellow-50',text: 'text-yellow-700' },
+          { key: 'NO_CUMPLIDO', label: 'No cumplido', valor: pNoCumplido,           sub: 'sin votos E-14',                     color: 'border-orange-300 bg-orange-50',text: 'text-orange-700' },
+        ].map(c => (
+          <button key={c.key} onClick={() => setFiltro(c.key)}
+            className={`border-2 rounded-xl p-4 text-left transition-all ${c.color} ${filtro === c.key ? 'ring-2 ring-offset-1 ring-blue-400 shadow-md' : 'hover:shadow-sm'}`}>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">{c.label}</p>
+            <p className={`text-3xl font-black mt-1 ${c.text}`}>{c.valor}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Acciones */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-sm text-gray-500">{mesasFiltradas.length} mesa{mesasFiltradas.length !== 1 ? 's' : ''}</p>
+        <button onClick={onExportar} disabled={descargando}
+          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+          {descargando ? '⏳ Generando...' : '⬇ Informe Excel'}
+        </button>
+      </div>
+
+      {/* Tabla de mesas */}
+      {mesasFiltradas.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 px-6 py-12 text-center text-sm text-gray-400">
+          No hay mesas en este estado
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Puesto / Mesa</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Votos obtenidos</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Registrados (total)</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Este líder</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Otros líderes</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {mesasFiltradas.map(mesa => {
+                const cfg = estadoCfg[mesa.estadoMesa] || estadoCfg.NO_CUMPLIDO;
+                const estaExpandida = expandida === mesa.key;
+                const faltantes = mesa.totalPersonasMesa - mesa.votosObtenidos;
+                return (
+                  <>
+                    <tr key={mesa.key}
+                      onClick={() => setExpandida(estaExpandida ? null : mesa.key)}
+                      className="hover:bg-gray-50 cursor-pointer">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900 leading-tight">{mesa.nombrePuesto || '—'}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{mesa.municipio} · Mesa {mesa.mesa}{mesa.zona ? ` · Zona ${mesa.zona}` : ''}</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-2xl font-black text-blue-700">{mesa.votosObtenidos}</span>
+                        {mesa.votosLista > 0 && <div className="text-xs text-gray-400">+{mesa.votosLista} lista</div>}
+                        {faltantes > 0 && (
+                          <div className="text-xs font-semibold text-red-500 mt-0.5">faltan {faltantes}</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-2xl font-black text-gray-700">{mesa.totalPersonasMesa}</span>
+                        <div className="text-xs text-gray-400 mt-0.5">deberían votar</div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-lg font-bold text-indigo-600">{mesa.personasDelLider}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {mesa.otrosLideres.length === 0 ? (
+                          <span className="text-xs text-gray-300">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {mesa.otrosLideres.slice(0, 3).map((l, i) => (
+                              <span key={i} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full border border-gray-200">
+                                {l.nombre.split(' ')[0]} <span className="font-semibold">{l.count}</span>
+                              </span>
+                            ))}
+                            {mesa.otrosLideres.length > 3 && (
+                              <span className="text-xs text-gray-400">+{mesa.otrosLideres.length - 3} más</span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                          {cfg.label}
+                        </span>
+                      </td>
+                    </tr>
+                    {estaExpandida && (
+                      <tr key={`${mesa.key}-detalle`} className="bg-blue-50">
+                        <td colSpan={6} className="px-6 py-4 space-y-4">
+                          {/* Personas del líder seleccionado */}
+                          <div>
+                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-3">
+                              Personas de este líder en la mesa ({mesa.personas.length})
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {mesa.personas.map(p => {
+                                const vCfg = VOTO_CONFIG[p.estadoVoto] || VOTO_CONFIG.NO_CUMPLIDO;
+                                return (
+                                  <div key={p._id} className="flex items-center justify-between bg-white rounded-lg border border-blue-100 px-3 py-2 gap-2">
+                                    <div className="min-w-0">
+                                      <div className="font-medium text-gray-900 text-sm truncate">{p.nombres} {p.apellidos}</div>
+                                      <div className="text-xs text-gray-400">{p.documento}</div>
+                                    </div>
+                                    <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${vCfg.bg} ${vCfg.text}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${vCfg.dot}`} />
+                                      {vCfg.label}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {/* Personas de otros líderes en la misma mesa */}
+                          {mesa.otrosLideres.filter(l => l.personas?.length > 0).map((l, li) => (
+                            <div key={li}>
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                                {l.nombre.split(' ')[0]} — {l.personas.length} persona{l.personas.length !== 1 ? 's' : ''}
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {l.personas.map(p => {
+                                  const vCfg = VOTO_CONFIG[p.estadoVoto] || VOTO_CONFIG.NO_CUMPLIDO;
+                                  return (
+                                    <div key={p._id} className="flex items-center justify-between bg-white rounded-lg border border-gray-200 px-3 py-2 gap-2 opacity-75">
+                                      <div className="min-w-0">
+                                        <div className="font-medium text-gray-700 text-sm truncate">{p.nombres} {p.apellidos}</div>
+                                        <div className="text-xs text-gray-400">{p.documento}</div>
+                                      </div>
+                                      <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${vCfg.bg} ${vCfg.text}`}>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${vCfg.dot}`} />
+                                        {vCfg.label}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Componente principal ───────────────────────────────────────────────────
 
 export default function E14() {
@@ -687,7 +917,7 @@ export default function E14() {
           </div>
           {liderSeleccionado ? (
             <div className="p-5">
-              <VistaLider
+              <VistaInformeLider
                 liderId={liderSeleccionado}
                 onExportar={async () => {
                   setDescargandoLider(true);
@@ -700,14 +930,14 @@ export default function E14() {
             </div>
           ) : (
             <div className="px-5 py-10 text-center text-sm text-gray-400">
-              Selecciona un líder para ver sus personas y su estado de voto
+              Selecciona un líder para ver sus mesas, personas y estado de votos
             </div>
           )}
         </div>
       )}
 
-      {/* Tarjetas de resumen — solo para ADMIN/COORDINADOR */}
-      {!esLider && !modoImport && (
+      {/* Tarjetas de resumen — solo para ADMIN/COORDINADOR y sin líder seleccionado */}
+      {!esLider && !modoImport && !liderSeleccionado && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* Total votos candidato */}
           <div className="bg-white rounded-xl border-l-4 border-blue-500 border border-gray-200 p-4 shadow-sm">
@@ -1127,7 +1357,7 @@ export default function E14() {
       {/* ═══════════════════════════════════════════════════════════════
           TABLA DE ANÁLISIS CRUZADO — solo ADMIN/COORDINADOR
       ════════════════════════════════════════════════════════════════ */}
-      {!esLider && !modoImport && (
+      {!esLider && !modoImport && !liderSeleccionado && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

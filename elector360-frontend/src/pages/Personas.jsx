@@ -16,6 +16,7 @@ const initialFormData = {
   email: '',
   telefono: '',
   estadoContacto: 'PENDIENTE',
+  tipo: '',
   departamento: '',
   municipio: '',
   zona: '',
@@ -63,7 +64,7 @@ function Personas() {
   const [personaEditando, setPersonaEditando] = useState(null);
   const [datosEdicion, setDatosEdicion] = useState({
     nombres: '', apellidos: '', telefono: '', email: '',
-    estadoContacto: '', departamento: '', municipio: '',
+    estadoContacto: '', tipo: '', departamento: '', municipio: '',
     zona: '', nombrePuesto: '', direccion: '', mesa: '', notas: ''
   });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
@@ -263,6 +264,7 @@ function Personas() {
       email: formData.email.trim() || undefined,
       telefono: formData.telefono.trim() || undefined,
       estadoContacto: formData.estadoContacto,
+      tipo: formData.tipo || undefined,
       puesto: {
         departamento: formData.departamento.trim() || undefined,
         municipio: formData.municipio.trim() || undefined,
@@ -345,6 +347,7 @@ function Personas() {
       telefono: persona.telefono || '',
       email: persona.email || '',
       estadoContacto: persona.estadoContacto || 'NO_CONTACTADO',
+      tipo: persona.tipo || '',
       departamento: p.departamento || '',
       municipio: p.municipio || '',
       zona: p.zona || '',
@@ -377,6 +380,7 @@ function Personas() {
         telefono: datosEdicion.telefono.trim() || undefined,
         email: datosEdicion.email.trim() || undefined,
         estadoContacto: datosEdicion.estadoContacto || undefined,
+        tipo: datosEdicion.tipo || undefined,
         notas: datosEdicion.notas.trim(),
         puesto: {
           departamento: datosEdicion.departamento.trim() || undefined,
@@ -764,6 +768,9 @@ function Personas() {
                       Voto
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tipo
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       RPA
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -821,6 +828,17 @@ function Personas() {
                         >
                           {votoLabels[persona.estadoVoto] || 'Sin datos'}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {persona.tipo === 'C' && (
+                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-purple-100 text-purple-800">C</span>
+                        )}
+                        {persona.tipo === 'V' && (
+                          <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-teal-100 text-teal-800">V</span>
+                        )}
+                        {!persona.tipo && (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {(() => {
@@ -1042,6 +1060,14 @@ function Personas() {
                       <option value="NO_CONTACTADO">No Contactado</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                    <select name="tipo" value={formData.tipo} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                      <option value="">— Sin asignar —</option>
+                      <option value="C">C — Compra</option>
+                      <option value="V">V — Voluntario</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -1139,13 +1165,21 @@ function Personas() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                     <input type="email" name="email" value={datosEdicion.email} onChange={handleEdicionChange} placeholder="correo@ejemplo.com" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
                   </div>
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Estado de Contacto</label>
                     <select name="estadoContacto" value={datosEdicion.estadoContacto} onChange={handleEdicionChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                       <option value="PENDIENTE">Pendiente</option>
                       <option value="NO_CONTACTADO">No Contactado</option>
                       <option value="CONTACTADO">Contactado</option>
                       <option value="CONFIRMADO">Confirmado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                    <select name="tipo" value={datosEdicion.tipo} onChange={handleEdicionChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                      <option value="">— Sin asignar —</option>
+                      <option value="C">C — Compra</option>
+                      <option value="V">V — Voluntario</option>
                     </select>
                   </div>
                 </div>
@@ -1297,6 +1331,12 @@ function Personas() {
                       {getEstadoLabel(personaDetalle.estadoContacto)}
                     </span>
                   </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500">Tipo:</span>
+                    {personaDetalle.tipo === 'C' && <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-purple-100 text-purple-800">C — Compra</span>}
+                    {personaDetalle.tipo === 'V' && <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-teal-100 text-teal-800">V — Voluntario</span>}
+                    {!personaDetalle.tipo && <span className="font-medium ml-1 text-gray-400">Sin asignar</span>}
+                  </div>
                   <div><span className="text-gray-500">Estado RPA:</span> <span className="font-medium ml-1">{personaDetalle.estadoRPA || 'N/A'}</span></div>
                   <div><span className="text-gray-500">Origen:</span> <span className="font-medium ml-1">{personaDetalle.origen || 'N/A'}</span></div>
                   <div><span className="text-gray-500">Confirmado:</span> <span className="font-medium ml-1">{personaDetalle.confirmado ? 'Si' : 'No'}</span></div>
@@ -1395,7 +1435,7 @@ function Personas() {
                     </div>
                     <span className="font-medium text-purple-600">Click para seleccionar</span>
                     <span className="text-gray-500"> o arrastra</span>
-                    <p className="text-xs text-gray-400 mt-1">Excel (.xlsx, .xls) - Columnas: Cedula, Nombres, Apellidos, Telefono, Email, Depto, Municipio, Puesto, Direccion, Mesa, Estado</p>
+                    <p className="text-xs text-gray-400 mt-1">Excel (.xlsx, .xls) - Columnas: Cedula, Nombres, Apellidos, Telefono, Email, Depto, Municipio, Zona, Puesto, Direccion, Mesa, Estado, Tipo</p>
                   </label>
                 )}
               </div>

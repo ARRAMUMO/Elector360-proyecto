@@ -127,11 +127,23 @@ exports.exportarInforme = asyncHandler(async (req, res) => {
   const tipo = req.query.tipo === 'resumen' ? 'resumen' : 'personas';
   const wb = await e14Service.exportarInforme(req.campanaId, liderFiltro, tipo);
   const fecha = new Date().toISOString().slice(0, 10);
-  const sufijo = liderFiltro ? `-${(req.user.perfil?.nombres || req.user.email).split(' ')[0].toLowerCase()}` : '';
+  const nombreUsuario = (req.user.perfil?.nombres || req.user.email || 'usuario').split(' ')[0].toLowerCase();
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="informe-e14-${tipo}-${fecha}${sufijo}.xlsx"`);
+  res.setHeader('Content-Disposition', `attachment; filename="informe-e14-${tipo}-${fecha}-${nombreUsuario}.xlsx"`);
   await wb.xlsx.write(res);
   res.end();
+});
+
+/**
+ * @desc    Informe de un líder: mesas con personas, votos y otros líderes
+ * @route   GET /api/v1/e14/informe-lider
+ * @access  Lider (propio), Coordinador/Admin (con ?liderId=)
+ */
+exports.getInformeLider = asyncHandler(async (req, res) => {
+  const liderId = req.user.rol === 'LIDER' ? req.user._id : req.query.liderId;
+  if (!liderId) throw new ApiError(400, 'liderId es requerido');
+  const data = await e14Service.obtenerInformeLider(req.campanaId, liderId);
+  res.json({ success: true, data });
 });
 
 /**

@@ -527,7 +527,7 @@ const verificarVotosMesas = async (campanaId) => {
   ]);
 
   // Resetear todas las personas a NO_CUMPLIDO (sin E-14 = no cumplido)
-  await Persona.updateMany({ campana: campanaId }, { $set: { estadoVoto: 'NO_CUMPLIDO', notaVoto: 'Sin resultado E-14 para esta mesa' } });
+  await Persona.updateMany({ campana: campanaId }, { $set: { estadoVoto: 'NO_CUMPLIDO', notaVoto: 'No hay votos' } });
 
   if (resultados.length === 0) {
     return { totalMesas: 0, mesasConPersonas: 0, personasActualizadas: 0, resumen: { cumplido: 0, verificable: 0, noCumplido: 0, sinDatos: 0 } };
@@ -841,7 +841,7 @@ const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas')
       ev = 'VERIFICABLE';
     }
     const notaVoto = !tieneE14
-      ? 'Sin resultado E-14 para esta mesa'
+      ? 'No hay votos'
       : votos === 0
         ? 'Sin votos del candidato en esta mesa'
         : votos >= totalEnMesa
@@ -872,6 +872,126 @@ const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas')
   return wb;
 };
 
+/**
+ * Informe de un líder específico: mesas donde tiene personas,
+ * votos obtenidos en cada mesa, total de personas en esa mesa,
+ * y qué otros líderes comparten la mesa.
+ */
+const obtenerInformeLider = async (campanaId, liderId) => {
+  if (!campanaId) throw new ApiError(400, 'No hay campaña activa');
+  if (!liderId) throw new ApiError(400, 'liderId es requerido');
+
+  // 1. Personas del líder
+  const personasLider = await Persona.find(
+    { campana: campanaId, 'lider.id': liderId },
+    { nombres: 1, apellidos: 1, documento: 1, telefono: 1, estadoContacto: 1, estadoVoto: 1, puesto: 1 }
+  ).lean();
+
+  if (personasLider.length === 0) {
+    return { mesas: [], resumen: { totalMesas: 0, totalPersonas: 0, totalVotos: 0, mesasCumplidas: 0, mesasVerificables: 0, mesasNoCumplidas: 0 } };
+  }
+
+  // 2. Agrupar personas del líder por mesa
+  const mesasMap = new Map();
+  for (const p of personasLider) {
+    const key = normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa);
+    if (!mesasMap.has(key)) {
+      mesasMap.set(key, {
+        key,
+        departamento: p.puesto?.departamento || '',
+        municipio: p.puesto?.municipio || '',
+        zona: p.puesto?.zona || '',
+        nombrePuesto: p.puesto?.nombrePuesto || '',
+        mesa: p.puesto?.mesa || '',
+        personas: []
+      });
+    }
+    mesasMap.get(key).personas.push(p);
+  }
+
+  // 3. Votos E-14
+  const resultados = await ResultadoMesa.find({ campana: campanaId }).lean();
+  const votosMap = new Map();
+  for (const r of resultados) {
+    const key = normKey(r.departamento, r.municipio, r.zona, r.nombrePuesto, r.mesa);
+    votosMap.set(key, r);
+  }
+
+  // 4. Todas las personas de la campaña para encontrar otros líderes en las mismas mesas
+  const todasPersonas = await Persona.find(
+    { campana: campanaId },
+    { nombres: 1, apellidos: 1, documento: 1, estadoVoto: 1, 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1, 'lider.id': 1, 'lider.nombre': 1 }
+  ).lean();
+
+  const liderIdStr = String(liderId);
+  const otrosLideresMap = new Map(); // mesaKey → Map(liderIdStr → { nombre, count, personas[] })
+  for (const p of todasPersonas) {
+    if (String(p.lider?.id) === liderIdStr) continue;
+    const key = normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa);
+    if (!mesasMap.has(key)) continue;
+    if (!otrosLideresMap.has(key)) otrosLideresMap.set(key, new Map());
+    const liderMap = otrosLideresMap.get(key);
+    const lid = String(p.lider?.id || 'sin-lider');
+    const nombre = p.lider?.nombre || 'Sin líder';
+    if (!liderMap.has(lid)) liderMap.set(lid, { nombre, count: 0, personas: [] });
+    const entry = liderMap.get(lid);
+    entry.count++;
+    entry.personas.push({ _id: p._id, nombres: p.nombres, apellidos: p.apellidos, documento: p.documento, estadoVoto: p.estadoVoto || 'NO_CUMPLIDO' });
+  }
+
+  // 5. Construir resultado
+  const mesas = [];
+  for (const [key, mesaData] of mesasMap) {
+    const resultado = votosMap.get(key);
+    const otrosLideresEntry = otrosLideresMap.get(key);
+    const otrosLideres = otrosLideresEntry
+      ? Array.from(otrosLideresEntry.values()).sort((a, b) => b.count - a.count)
+      : [];
+    const totalOtros = otrosLideres.reduce((s, l) => s + l.count, 0);
+    const votosObtenidos = resultado?.votosObtenidos || 0;
+    const N = mesaData.personas.length;
+    const totalMesa = N + totalOtros;
+
+    // estadoMesa se calcula contra el TOTAL de la mesa (todos los líderes),
+    // no solo las personas de este líder. Ej: 1 voto de 3 registrados = VERIFICABLE.
+    let estadoMesa;
+    if (!resultado || votosObtenidos === 0) estadoMesa = 'NO_CUMPLIDO';
+    else if (votosObtenidos >= totalMesa) estadoMesa = 'CUMPLIDO';
+    else estadoMesa = 'VERIFICABLE';
+
+    mesas.push({
+      key,
+      departamento: mesaData.departamento,
+      municipio: mesaData.municipio,
+      zona: mesaData.zona,
+      nombrePuesto: mesaData.nombrePuesto,
+      mesa: mesaData.mesa,
+      votosObtenidos,
+      votosLista: resultado?.votosLista || 0,
+      potencialVotacion: resultado?.potencialVotacion || 0,
+      personasDelLider: N,
+      totalPersonasMesa: totalMesa,
+      otrosLideres,
+      estadoMesa,
+      personas: mesaData.personas
+    });
+  }
+
+  const estadoOrder = { NO_CUMPLIDO: 0, VERIFICABLE: 1, CUMPLIDO: 2 };
+  mesas.sort((a, b) => (estadoOrder[a.estadoMesa] - estadoOrder[b.estadoMesa]) || (a.municipio || '').localeCompare(b.municipio || ''));
+
+  const resumen = {
+    totalMesas: mesas.length,
+    totalPersonas: personasLider.length,
+    totalVotos: mesas.reduce((s, m) => s + m.votosObtenidos, 0),
+    mesasCumplidas: mesas.filter(m => m.estadoMesa === 'CUMPLIDO').length,
+    mesasVerificables: mesas.filter(m => m.estadoMesa === 'VERIFICABLE').length,
+    mesasNoCumplidas: mesas.filter(m => m.estadoMesa === 'NO_CUMPLIDO').length,
+  };
+
+  return { mesas, resumen };
+};
+
 module.exports = {
   guardarResultado,
   listarResultados,
@@ -883,5 +1003,6 @@ module.exports = {
   importarDesdeExcel,
   verificarVotosMesas,
   obtenerMisPersonas,
-  exportarInforme
+  exportarInforme,
+  obtenerInformeLider
 };

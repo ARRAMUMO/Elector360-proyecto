@@ -1,4 +1,5 @@
 import api from './api';
+import authService from './authService';
 
 const e14Service = {
   async guardarResultado(datos) {
@@ -101,8 +102,10 @@ const e14Service = {
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
       const fecha = new Date().toISOString().slice(0, 10);
+      const user = authService.getStoredUser();
+      const nombre = (user?.perfil?.nombres || user?.email || 'usuario').split(' ')[0].toLowerCase();
       a.href = url;
-      a.download = `informe-e14-${tipo}-${fecha}.xlsx`;
+      a.download = `informe-e14-${tipo}-${fecha}-${nombre}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
       return { success: true };
@@ -118,6 +121,16 @@ const e14Service = {
       return { success: true, data: res.data.data };
     } catch (err) {
       return { success: false, error: err.response?.data?.error || 'Error al obtener personas' };
+    }
+  },
+
+  async informeLider(liderId = null) {
+    try {
+      const params = liderId ? `?liderId=${liderId}` : '';
+      const res = await api.get(`/e14/informe-lider${params}`, { timeout: 90000 });
+      return { success: true, data: res.data.data };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Error al obtener informe del líder' };
     }
   },
 

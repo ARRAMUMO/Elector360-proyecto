@@ -327,10 +327,12 @@ class PersonaService {
         email: (row.getCell(5).value || '').toString().trim() || undefined,
         departamento: (row.getCell(6).value || '').toString().trim() || undefined,
         municipio: (row.getCell(7).value || '').toString().trim() || undefined,
-        nombrePuesto: (row.getCell(8).value || '').toString().trim() || undefined,
-        direccion: (row.getCell(9).value || '').toString().trim() || undefined,
-        mesa: (row.getCell(10).value || '').toString().trim() || undefined,
-        estadoContacto: (row.getCell(11).value || '').toString().trim().toUpperCase() || undefined
+        zona: (row.getCell(8).value || '').toString().trim() || undefined,
+        nombrePuesto: (row.getCell(9).value || '').toString().trim() || undefined,
+        direccion: (row.getCell(10).value || '').toString().trim() || undefined,
+        mesa: (row.getCell(11).value || '').toString().trim() || undefined,
+        estadoContacto: (row.getCell(12).value || '').toString().trim().toUpperCase() || undefined,
+        tipo: (row.getCell(13).value || '').toString().trim().toUpperCase() || undefined
       });
     });
 
@@ -380,6 +382,7 @@ class PersonaService {
       const puestoData = {};
       if (f.departamento) puestoData.departamento = f.departamento;
       if (f.municipio) puestoData.municipio = f.municipio;
+      if (f.zona) puestoData.zona = f.zona;
       if (f.nombrePuesto) puestoData.nombrePuesto = f.nombrePuesto;
       if (f.direccion) puestoData.direccion = f.direccion;
       if (f.mesa) puestoData.mesa = f.mesa;
@@ -392,6 +395,7 @@ class PersonaService {
         if (f.telefono) updateFields.telefono = f.telefono;
         if (f.email) updateFields.email = f.email;
         if (f.estadoContacto) updateFields.estadoContacto = f.estadoContacto;
+        if (f.tipo && ['C', 'V'].includes(f.tipo)) updateFields.tipo = f.tipo;
         if (Object.keys(puestoData).length > 0) updateFields.puesto = puestoData;
 
         if (Object.keys(updateFields).length > 0) {
@@ -414,6 +418,7 @@ class PersonaService {
           email: f.email,
           puesto: Object.keys(puestoData).length > 0 ? puestoData : undefined,
           estadoContacto: f.estadoContacto || 'PENDIENTE',
+          tipo: (f.tipo && ['C', 'V'].includes(f.tipo)) ? f.tipo : undefined,
           campana: campanaId,
           lider: liderData,
           confirmado: true,
@@ -482,10 +487,12 @@ class PersonaService {
       { header: 'Email', key: 'email', width: 25 },
       { header: 'Departamento', key: 'departamento', width: 18 },
       { header: 'Municipio', key: 'municipio', width: 18 },
+      { header: 'Zona', key: 'zona', width: 10 },
       { header: 'Puesto de Votación', key: 'puesto', width: 25 },
       { header: 'Dirección', key: 'direccion', width: 30 },
       { header: 'Mesa', key: 'mesa', width: 8 },
-      { header: 'Estado Contacto', key: 'estadoContacto', width: 18 }
+      { header: 'Estado Contacto', key: 'estadoContacto', width: 18 },
+      { header: 'Tipo', key: 'tipo', width: 10 }
     ];
 
     // Ejemplo
@@ -497,10 +504,12 @@ class PersonaService {
       email: 'juan@email.com',
       departamento: 'ATLANTICO',
       municipio: 'BARRANQUILLA',
+      zona: '5',
       puesto: 'I.E. EJEMPLO',
       direccion: 'CRA 1 # 2-3',
       mesa: '5',
-      estadoContacto: 'PENDIENTE'
+      estadoContacto: 'PENDIENTE',
+      tipo: 'V'
     });
 
     // Estilos
@@ -523,10 +532,12 @@ class PersonaService {
     wsInst.addRow(['Columna E: Email (opcional)']);
     wsInst.addRow(['Columna F: Departamento (opcional)']);
     wsInst.addRow(['Columna G: Municipio (opcional)']);
-    wsInst.addRow(['Columna H: Puesto de Votación (opcional)']);
-    wsInst.addRow(['Columna I: Dirección (opcional)']);
-    wsInst.addRow(['Columna J: Mesa (opcional)']);
-    wsInst.addRow(['Columna K: Estado Contacto (PENDIENTE, CONTACTADO, CONFIRMADO, NO_CONTACTADO)']);
+    wsInst.addRow(['Columna H: Zona (opcional, número de zona)']);
+    wsInst.addRow(['Columna I: Puesto de Votación (opcional)']);
+    wsInst.addRow(['Columna J: Dirección (opcional)']);
+    wsInst.addRow(['Columna K: Mesa (opcional)']);
+    wsInst.addRow(['Columna L: Estado Contacto (PENDIENTE, CONTACTADO, CONFIRMADO, NO_CONTACTADO)']);
+    wsInst.addRow(['Columna M: Tipo (C = Compra, V = Voluntario — dejar vacío si no aplica)']);
     wsInst.addRow([]);
     wsInst.addRow(['NOTAS:']);
     wsInst.addRow(['- Si la cédula ya existe, se actualizarán los datos']);

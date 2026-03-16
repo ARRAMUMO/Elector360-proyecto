@@ -102,7 +102,14 @@ const personaSchema = new mongoose.Schema({
     default: 'RPA_REGISTRADURIA'
   },
   notas: String,
-  
+
+  // Tipo de persona: C = Compra, V = Voluntario
+  tipo: {
+    type: String,
+    enum: ['C', 'V'],
+    default: null
+  },
+
   // ⭐ NUEVO: Flag para saber si ya fue confirmado/guardado por un líder
   confirmado: {
     type: Boolean,
