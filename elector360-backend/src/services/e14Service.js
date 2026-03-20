@@ -952,13 +952,35 @@ const obtenerInformeLider = async (campanaId, liderId) => {
     mesasMap.get(key).personas.push(p);
   }
 
-  // 3. Votos E-14
+  // 3. Votos E-14 — mapa exacto + fuzzy-15 (mismo criterio que informePorLider)
   const resultados = await ResultadoMesa.find({ campana: campanaId }).lean();
   const votosMap = new Map();
+  const votosMap15 = new Map(); // clave fuzzy: dep|mun|puesto15chars|mesa
   for (const r of resultados) {
     const key = normKey(r.departamento, r.municipio, r.zona, r.nombrePuesto, r.mesa);
     votosMap.set(key, r);
+    const dep = sinTildes((r.departamento || '').toLowerCase().trim());
+    const mun = sinTildes((r.municipio || '').toLowerCase().trim());
+    const p15 = normalizarPuesto(r.nombrePuesto).slice(0, 15);
+    const m   = extractNum(r.mesa);
+    const k15 = `${dep}|${mun}|${p15}|${m}`;
+    if (!votosMap15.has(k15)) votosMap15.set(k15, { resultado: r, count: 1 });
+    else votosMap15.get(k15).count++;
   }
+
+  // Helper para obtener resultado con fallback fuzzy
+  const getResultado = (mesaData) => {
+    const key = normKey(mesaData.departamento, mesaData.municipio, mesaData.zona, mesaData.nombrePuesto, mesaData.mesa);
+    if (votosMap.has(key)) return votosMap.get(key);
+    const dep = sinTildes((mesaData.departamento || '').toLowerCase().trim());
+    const mun = sinTildes((mesaData.municipio || '').toLowerCase().trim());
+    const p15 = normalizarPuesto(mesaData.nombrePuesto).slice(0, 15);
+    const m   = extractNum(mesaData.mesa);
+    const k15 = `${dep}|${mun}|${p15}|${m}`;
+    const e15 = votosMap15.get(k15);
+    if (e15 && e15.count === 1) return e15.resultado;
+    return null;
+  };
 
   // 4. Todas las personas de la campaña para encontrar otros líderes en las mismas mesas
   const todasPersonas = await Persona.find(
@@ -985,7 +1007,7 @@ const obtenerInformeLider = async (campanaId, liderId) => {
   // 5. Construir resultado
   const mesas = [];
   for (const [key, mesaData] of mesasMap) {
-    const resultado = votosMap.get(key);
+    const resultado = getResultado(mesaData);
     const otrosLideresEntry = otrosLideresMap.get(key);
     const otrosLideres = otrosLideresEntry
       ? Array.from(otrosLideresEntry.values()).sort((a, b) => b.count - a.count)
