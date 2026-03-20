@@ -202,16 +202,17 @@ function VistaLider({ liderId, onExportar, descargando }) {
 
 // ─── Vista Informe Líder (agrupado por mesa) ────────────────────────────────
 
-function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExportar, descargando }) {
+function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExportar, descargando, filtroInicial = 'TODOS' }) {
   const [datos, setDatos] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [filtro, setFiltro] = useState('TODOS');
+  const [filtro, setFiltro] = useState(filtroInicial);
   const [expandida, setExpandida] = useState(null);
 
   useEffect(() => {
     if (!liderId) return;
     setLoading(true);
     setExpandida(null);
+    setFiltro(filtroInicial);
     e14Service.informeLider(liderId).then(res => {
       if (res.success) setDatos(res.data);
       setLoading(false);
@@ -484,6 +485,9 @@ export default function E14() {
   const [descargandoLider, setDescargandoLider] = useState(false);
   const [tipoInforme, setTipoInforme] = useState('personas');
   const [tipoInformeLider, setTipoInformeLider] = useState('personas');
+  const [busquedaLider, setBusquedaLider] = useState('');
+  const [dropdownLiderAbierto, setDropdownLiderAbierto] = useState(false);
+  const liderDropdownRef = useRef(null);
 
   // ── Modal importar Excel ──
   const [modalExcel, setModalExcel] = useState(false);
@@ -500,6 +504,17 @@ export default function E14() {
         if (res.data.success) setListaLideres(res.data.data.usuarios || []);
       }).catch(() => {});
     }
+  }, []);
+
+  // Cerrar dropdown de líder al hacer click fuera
+  useEffect(() => {
+    const handler = (e) => {
+      if (liderDropdownRef.current && !liderDropdownRef.current.contains(e.target)) {
+        setDropdownLiderAbierto(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   const cargarDatos = async () => {
@@ -873,23 +888,97 @@ export default function E14() {
         />
       )}
 
+      {/* Análisis por mesa para LIDER — muestra con quién comparte votos */}
+      {esLider && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+            <span className="text-yellow-500">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </span>
+            <h2 className="text-base font-semibold text-gray-800">¿Con quién comparto votos?</h2>
+            <span className="ml-1 text-xs bg-yellow-100 text-yellow-800 font-semibold px-2 py-0.5 rounded-full">Verificables</span>
+          </div>
+          <div className="p-5">
+            <VistaInformeLider
+              liderId={user?._id}
+              filtroInicial="VERIFICABLE"
+              onExportar={async () => {
+                setDescargando(true);
+                const res = await e14Service.exportarInforme(user?._id, 'resumen');
+                if (!res.success) showToast(res.error, 'error');
+                setDescargando(false);
+              }}
+              descargando={descargando}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Vista por Líder — solo coordinador/admin */}
       {esAdminOCoord && !modoImport && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center flex-wrap gap-3">
             <h2 className="text-base font-semibold text-gray-800">Vista por Líder</h2>
-            <select
-              value={liderSeleccionado}
-              onChange={e => { setLiderSeleccionado(e.target.value); }}
-              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-48"
-            >
-              <option value="">— Seleccionar líder —</option>
-              {listaLideres.map(l => (
-                <option key={l._id} value={l._id}>
-                  {l.perfil?.nombres} {l.perfil?.apellidos}
-                </option>
-              ))}
-            </select>
+            {/* Combobox con búsqueda de líder */}
+            <div className="relative min-w-56" ref={liderDropdownRef}>
+              <div
+                className="flex items-center border border-gray-300 rounded-lg bg-white focus-within:ring-2 focus-within:ring-blue-500 overflow-hidden"
+              >
+                <svg className="w-4 h-4 text-gray-400 ml-2.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Buscar líder..."
+                  value={dropdownLiderAbierto
+                    ? busquedaLider
+                    : liderSeleccionado
+                      ? (() => { const l = listaLideres.find(x => x._id === liderSeleccionado); return l ? `${l.perfil?.nombres} ${l.perfil?.apellidos}` : ''; })()
+                      : ''}
+                  onChange={e => { setBusquedaLider(e.target.value); setDropdownLiderAbierto(true); }}
+                  onFocus={() => { setBusquedaLider(''); setDropdownLiderAbierto(true); }}
+                  className="flex-1 px-2 py-1.5 text-sm outline-none bg-transparent"
+                />
+                {liderSeleccionado && (
+                  <button
+                    onClick={() => { setLiderSeleccionado(''); setBusquedaLider(''); setDropdownLiderAbierto(false); }}
+                    className="px-2 text-gray-400 hover:text-gray-600"
+                    title="Limpiar"
+                  >✕</button>
+                )}
+              </div>
+              {dropdownLiderAbierto && (
+                <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {listaLideres
+                    .filter(l => {
+                      const nombre = `${l.perfil?.nombres || ''} ${l.perfil?.apellidos || ''}`.toLowerCase();
+                      return nombre.includes(busquedaLider.toLowerCase());
+                    })
+                    .map(l => (
+                      <button
+                        key={l._id}
+                        onMouseDown={() => {
+                          setLiderSeleccionado(l._id);
+                          setBusquedaLider('');
+                          setDropdownLiderAbierto(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors ${liderSeleccionado === l._id ? 'bg-blue-50 font-medium text-blue-700' : 'text-gray-700'}`}
+                      >
+                        {l.perfil?.nombres} {l.perfil?.apellidos}
+                      </button>
+                    ))
+                  }
+                  {listaLideres.filter(l => {
+                    const nombre = `${l.perfil?.nombres || ''} ${l.perfil?.apellidos || ''}`.toLowerCase();
+                    return nombre.includes(busquedaLider.toLowerCase());
+                  }).length === 0 && (
+                    <p className="px-3 py-2 text-sm text-gray-400">Sin resultados</p>
+                  )}
+                </div>
+              )}
+            </div>
             {liderSeleccionado && (
               <div className="flex items-center gap-1">
                 <select

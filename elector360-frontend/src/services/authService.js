@@ -67,6 +67,7 @@ const authService = {
       localStorage.removeItem('token');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      localStorage.removeItem('campanaActiva');
       sessionStorage.removeItem('sessionActiva');
     }
   },
@@ -144,6 +145,26 @@ const authService = {
       return userStr ? JSON.parse(userStr) : null;
     } catch {
       return null;
+    }
+  },
+
+  /**
+   * Obtener la campaña activa seleccionada (para COORDINADOR con múltiples campañas)
+   * @returns {string|null} campanaId
+   */
+  getCampanaActiva() {
+    return localStorage.getItem('campanaActiva') || null;
+  },
+
+  /**
+   * Establecer la campaña activa (COORDINADOR selecciona desde el Dashboard)
+   * @param {string|null} campanaId
+   */
+  setCampanaActiva(campanaId) {
+    if (campanaId) {
+      localStorage.setItem('campanaActiva', campanaId);
+    } else {
+      localStorage.removeItem('campanaActiva');
     }
   }
 };

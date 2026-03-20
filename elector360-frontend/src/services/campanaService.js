@@ -55,7 +55,17 @@ const campanaService = {
     } catch (error) {
       return { success: false, error: error.response?.data?.error || 'Error al obtener estadisticas' };
     }
-  }
+  },
+
+  async misCampanas() {
+    try {
+      const response = await api.get('/campanas/mis-campanas');
+      return { success: true, data: response.data.data };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Error al obtener campañas', data: [] };
+    }
+  },
+
 };
 
 export default campanaService;

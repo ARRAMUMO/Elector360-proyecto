@@ -313,10 +313,12 @@ const personaService = {
    * @param {File} file - Archivo Excel
    * @returns {Promise}
    */
-  async importarDesdeExcel(file) {
+  async importarDesdeExcel(file, opciones = {}) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (opciones.liderId) formData.append('liderId', opciones.liderId);
+      if (opciones.campanaId) formData.append('campanaId', opciones.campanaId);
 
       const response = await api.post('/personas/importar', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }

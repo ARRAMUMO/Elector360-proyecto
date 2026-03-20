@@ -24,19 +24,23 @@ function Usuarios() {
     nombres: '',
     apellidos: '',
     telefono: '',
-    campana: ''
+    campana: '',
+    campanas: []   // Para COORDINADOR con múltiples campañas
   });
   const [modalAlert, setModalAlert] = useState(null);
   const [campanas, setCampanas] = useState([]);
+  const [busqueda, setBusqueda] = useState('');
 
   useEffect(() => {
     cargarUsuarios();
   }, []);
 
-  const cargarUsuarios = async () => {
+  const cargarUsuarios = async (search = busqueda) => {
     setLoading(true);
     try {
-      const response = await api.get('/usuarios');
+      const params = {};
+      if (search) params.search = search;
+      const response = await api.get('/usuarios', { params });
       if (response.data.success) {
         // El backend devuelve { data: { usuarios: [], pagination: {} } }
         const usuariosData = response.data.data?.usuarios || response.data.data;
@@ -50,6 +54,11 @@ function Usuarios() {
       setUsuarios([]);
     }
     setLoading(false);
+  };
+
+  const handleBuscar = (e) => {
+    e.preventDefault();
+    cargarUsuarios(busqueda);
   };
 
   const cargarCampanas = async () => {
@@ -68,6 +77,12 @@ function Usuarios() {
     if (esAdmin) cargarCampanas();
     if (usuario) {
       setEditingUser(usuario);
+      const campanasIds = (usuario.campanas || []).map(c => String(c._id || c));
+      const campanaPrincipalId = String(usuario.campana?._id || usuario.campana || '');
+      // Asegurar que la campaña principal esté en el array
+      const campanasCompletas = campanaPrincipalId && !campanasIds.includes(campanaPrincipalId)
+        ? [campanaPrincipalId, ...campanasIds]
+        : campanasIds;
       setFormData({
         email: usuario.email,
         password: '',
@@ -75,7 +90,8 @@ function Usuarios() {
         nombres: usuario.perfil?.nombres || '',
         apellidos: usuario.perfil?.apellidos || '',
         telefono: usuario.perfil?.telefono || '',
-        campana: usuario.campana?._id || usuario.campana || ''
+        campana: campanaPrincipalId,
+        campanas: campanasCompletas
       });
     } else {
       setEditingUser(null);
@@ -86,7 +102,8 @@ function Usuarios() {
         nombres: '',
         apellidos: '',
         telefono: '',
-        campana: ''
+        campana: '',
+        campanas: []
       });
     }
     setShowModal(true);
@@ -104,7 +121,8 @@ function Usuarios() {
       nombres: '',
       apellidos: '',
       telefono: '',
-      campana: ''
+      campana: '',
+      campanas: []
     });
     setAlert(null);
     setModalAlert(null);
@@ -126,8 +144,12 @@ function Usuarios() {
       }
     };
 
-    // Incluir campaña si se seleccionó (ADMIN asignando campaña)
-    if (esAdmin && formData.campana) {
+    // Incluir campaña(s) si se seleccionó (ADMIN asignando campaña)
+    if (esAdmin && formData.rol === 'COORDINADOR' && formData.campanas.length > 0) {
+      // COORDINADOR: enviar array completo de campañas
+      dataToSend.campanas = formData.campanas;
+      dataToSend.campana = formData.campana || formData.campanas[0];
+    } else if (esAdmin && formData.campana) {
       dataToSend.campana = formData.campana;
     }
 
@@ -227,7 +249,7 @@ function Usuarios() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-800 to-teal-700 bg-clip-text text-transparent">
             Usuarios
@@ -236,13 +258,41 @@ function Usuarios() {
             Gestiona los usuarios del sistema
           </p>
         </div>
-        <button
-          onClick={() => abrirModal()}
-          className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
-        >
-          <span className="mr-2">➕</span>
-          Nuevo Usuario
-        </button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Buscador */}
+          <form onSubmit={handleBuscar} className="flex gap-2">
+            <input
+              type="text"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar usuario..."
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent w-52"
+            />
+            <button
+              type="submit"
+              className="inline-flex items-center px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-300"
+            >
+              🔍 Buscar
+            </button>
+            {busqueda && (
+              <button
+                type="button"
+                onClick={() => { setBusqueda(''); cargarUsuarios(''); }}
+                className="px-2 py-2 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Limpiar búsqueda"
+              >
+                ✕
+              </button>
+            )}
+          </form>
+          <button
+            onClick={() => abrirModal()}
+            className="inline-flex items-center px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+          >
+            <span className="mr-2">➕</span>
+            Nuevo Usuario
+          </button>
+        </div>
       </div>
 
       {/* Lista de Usuarios */}
@@ -341,8 +391,13 @@ function Usuarios() {
                         </span>
                       </td>
                       {esAdmin && (
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <td className="px-6 py-4 text-sm text-gray-600 max-w-[200px]">
                           {usuario.campana?.nombre || '-'}
+                          {usuario.campanas?.length > 1 && (
+                            <span className="ml-1 text-xs text-teal-600 font-medium">
+                              +{usuario.campanas.length - 1} más
+                            </span>
+                          )}
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -548,16 +603,15 @@ function Usuarios() {
                   </select>
                 </div>
 
-                {/* Selector de campaña (solo ADMIN, visible para COORDINADOR y LIDER) */}
-                {esAdmin && formData.rol !== 'ADMIN' && (
+                {/* Selector de campaña para LIDER (dropdown simple) */}
+                {esAdmin && formData.rol === 'LIDER' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Campana {formData.rol === 'COORDINADOR' ? '*' : ''}
+                      Campana
                     </label>
                     <select
                       value={formData.campana}
                       onChange={(e) => setFormData({...formData, campana: e.target.value})}
-                      required={formData.rol === 'COORDINADOR'}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                     >
                       <option value="">Seleccionar campana...</option>
@@ -567,6 +621,85 @@ function Usuarios() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+
+                {/* Selector multi-campaña para COORDINADOR (checkboxes) */}
+                {esAdmin && formData.rol === 'COORDINADOR' && (
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Campanas asignadas *
+                      <span className="ml-1 text-xs text-gray-400 font-normal">(selecciona una o más)</span>
+                    </label>
+                    {campanas.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">No hay campañas disponibles</p>
+                    ) : (
+                      <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                        {campanas.map(c => {
+                          const checked = formData.campanas.includes(String(c._id));
+                          const esPrincipal = formData.campana === String(c._id);
+                          return (
+                            <label
+                              key={c._id}
+                              className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                                checked ? 'bg-teal-50 border border-teal-200' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const id = String(c._id);
+                                  let nuevasCampanas;
+                                  if (e.target.checked) {
+                                    nuevasCampanas = [...formData.campanas, id];
+                                  } else {
+                                    nuevasCampanas = formData.campanas.filter(x => x !== id);
+                                  }
+                                  // La campaña principal es la primera seleccionada (o la que ya estaba)
+                                  const nuevaPrincipal = nuevasCampanas.includes(formData.campana)
+                                    ? formData.campana
+                                    : (nuevasCampanas[0] || '');
+                                  setFormData({
+                                    ...formData,
+                                    campanas: nuevasCampanas,
+                                    campana: nuevaPrincipal
+                                  });
+                                }}
+                                className="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">{c.nombre}</p>
+                                <p className="text-xs text-gray-400">{c.tipo} · {c.estado}</p>
+                              </div>
+                              {esPrincipal && checked && (
+                                <span className="text-xs text-teal-600 font-semibold shrink-0">Principal</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {/* Selector de campaña principal entre las seleccionadas */}
+                    {formData.campanas.length > 1 && (
+                      <div className="mt-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Campaña principal (la que aparece por defecto)
+                        </label>
+                        <select
+                          value={formData.campana}
+                          onChange={(e) => setFormData({...formData, campana: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 text-sm"
+                        >
+                          {formData.campanas.map(id => {
+                            const camp = campanas.find(c => String(c._id) === id);
+                            return camp ? (
+                              <option key={id} value={id}>{camp.nombre}</option>
+                            ) : null;
+                          })}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
 

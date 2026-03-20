@@ -27,6 +27,11 @@ const usuarioSchema = new mongoose.Schema({
     ref: 'Campana',
     default: null
   },
+  // Array de campañas para COORDINADOR con acceso a múltiples
+  campanas: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana'
+  }],
   perfil: {
     nombres: {
       type: String,
@@ -92,7 +97,8 @@ usuarioSchema.methods.getJWTPayload = function() {
     id: this._id,
     email: this.email,
     rol: this.rol,
-    campana: this.campana
+    campana: this.campana,
+    campanas: this.campanas || []
   };
 };
 

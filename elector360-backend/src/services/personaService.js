@@ -360,13 +360,25 @@ class PersonaService {
       }
     });
 
-    // Batch: buscar existentes (dentro de la campaña)
     const documentos = filas.map(f => f.documento);
-    const filtroExistentes = { documento: { $in: documentos } };
-    if (campanaId) filtroExistentes.campana = campanaId;
-    const existentes = await Persona.find(filtroExistentes).select('documento').lean();
 
-    const existentesSet = new Set(existentes.map(e => e.documento));
+    // 1. Búsqueda global: verificar si el documento ya existe en la BD (en cualquier campaña)
+    //    Esto evita duplicados absolutos e identifica personas ya registradas.
+    const existentesGlobal = await Persona.find({ documento: { $in: documentos } })
+      .select('documento lider nombres apellidos campana')
+      .lean();
+    const existentesGlobalMap = {};
+    existentesGlobal.forEach(e => { existentesGlobalMap[e.documento] = e; });
+
+    // 2. Búsqueda en la misma campaña: detectar conflictos de líder dentro de esta campaña
+    const filtroMismaCampana = { documento: { $in: documentos } };
+    if (campanaId) filtroMismaCampana.campana = campanaId;
+    const existentesCampana = await Persona.find(filtroMismaCampana)
+      .select('documento lider nombres apellidos')
+      .lean();
+    const existentesCampanaMap = {};
+    existentesCampana.forEach(e => { existentesCampanaMap[e.documento] = e; });
+    const existentesCampanaSet = new Set(existentesCampana.map(e => e.documento));
 
     const liderData = {
       id: usuario._id,
@@ -377,6 +389,8 @@ class PersonaService {
     // Separar nuevas de existentes
     const nuevas = [];
     const actualizaciones = [];
+    const alianzas = []; // Vínculos de alianza: $addToSet campanas[]
+    const enOtroLider = []; // Conflicto: existe bajo otro líder
 
     filas.forEach(f => {
       const puestoData = {};
@@ -387,8 +401,24 @@ class PersonaService {
       if (f.direccion) puestoData.direccion = f.direccion;
       if (f.mesa) puestoData.mesa = f.mesa;
 
-      if (existentesSet.has(f.documento)) {
-        // Actualizar existente
+      if (existentesCampanaSet.has(f.documento)) {
+        // Existe en ESTA campaña
+        const existente = existentesCampanaMap[f.documento];
+        const liderActualId = existente.lider?.id?.toString();
+        const liderImportId = String(usuario._id);
+
+        // Conflicto: existe en esta campaña bajo otro líder → omitir y avisar
+        if (liderActualId && liderActualId !== liderImportId) {
+          enOtroLider.push({
+            fila: f.fila,
+            cedula: f.documento,
+            nombres: `${existente.nombres || f.nombres || ''} ${existente.apellidos || f.apellidos || ''}`.trim(),
+            liderActual: existente.lider?.nombre || 'Desconocido'
+          });
+          return; // No tocar
+        }
+
+        // Mismo líder en esta campaña → actualizar datos
         const updateFields = {};
         if (f.nombres) updateFields.nombres = f.nombres;
         if (f.apellidos) updateFields.apellidos = f.apellidos;
@@ -409,7 +439,49 @@ class PersonaService {
           });
         }
       } else {
-        // Crear nueva
+        // No existe en esta campaña — verificar si existe en otra (posible alianza)
+        const globalExistente = existentesGlobalMap[f.documento];
+        if (globalExistente) {
+          const liderGlobalId = globalExistente.lider?.id?.toString();
+          const liderImportId = String(usuario._id);
+          const puedeAlianza = usuario.rol === 'ADMIN' || usuario.rol === 'COORDINADOR';
+
+          if (liderGlobalId && liderGlobalId !== liderImportId) {
+            // Pertenece a otro líder en otra campaña → omitir y avisar siempre
+            enOtroLider.push({
+              fila: f.fila,
+              cedula: f.documento,
+              nombres: `${globalExistente.nombres || f.nombres || ''} ${globalExistente.apellidos || f.apellidos || ''}`.trim(),
+              liderActual: globalExistente.lider?.nombre || 'Desconocido'
+            });
+            return;
+          }
+
+          if (!puedeAlianza) {
+            // LIDER no puede vincular personas de otras campañas
+            enOtroLider.push({
+              fila: f.fila,
+              cedula: f.documento,
+              nombres: `${globalExistente.nombres || f.nombres || ''} ${globalExistente.apellidos || f.apellidos || ''}`.trim(),
+              liderActual: 'ya existe en otra campaña (solo COORDINADOR/ADMIN puede crear alianzas)'
+            });
+            return;
+          }
+
+          // ADMIN o COORDINADOR, mismo líder, persona en otra campaña → ALIANZA
+          // Vincular esta campaña al registro existente sin crear un duplicado
+          if (campanaId) {
+            alianzas.push({
+              updateOne: {
+                filter: { _id: globalExistente._id },
+                update: { $addToSet: { campanas: campanaId } }
+              }
+            });
+          }
+          return; // Vinculada vía alianza, no crear nueva
+        }
+
+        // No existe en ningún lado → crear nueva
         nuevas.push({
           documento: f.documento,
           nombres: f.nombres || '',
@@ -452,10 +524,17 @@ class PersonaService {
       }
     }
 
-    // Actualizar existentes en batch
+    // Actualizar datos de existentes en batch
     if (actualizaciones.length > 0) {
       const resultado = await Persona.bulkWrite(actualizaciones);
       actualizadas = resultado.modifiedCount;
+    }
+
+    // Vincular alianzas en batch ($addToSet campanas[])
+    let alianzadas = 0;
+    if (alianzas.length > 0) {
+      const resultado = await Persona.bulkWrite(alianzas);
+      alianzadas = resultado.modifiedCount;
     }
 
     // Actualizar stats
@@ -466,8 +545,11 @@ class PersonaService {
       total: filas.length,
       creadas,
       actualizadas,
+      alianzadas,
       errores: errores.length,
-      detallesErrores: errores
+      detallesErrores: errores,
+      enOtroLider: enOtroLider.length,
+      detallesOtroLider: enOtroLider
     };
   }
 

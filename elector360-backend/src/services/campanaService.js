@@ -90,6 +90,22 @@ class CampanaService {
     return { message: 'Campaña finalizada exitosamente' };
   }
 
+  async listarPorIds(ids) {
+    const campanas = await Campana.find({ _id: { $in: ids } }).lean();
+    return Promise.all(
+      campanas.map(async (c) => {
+        // Filtro que incluye personas aliadas (campanas[] array)
+        const filtroPersonas = { $or: [{ campana: c._id }, { campanas: c._id }] };
+        const [totalPersonas, lideres, confirmadas] = await Promise.all([
+          Persona.countDocuments(filtroPersonas),
+          Usuario.countDocuments({ campana: c._id, rol: 'LIDER' }),
+          Persona.countDocuments({ ...filtroPersonas, estadoContacto: 'CONFIRMADO' })
+        ]);
+        return { ...c, totalPersonas, lideres, confirmadas };
+      })
+    );
+  }
+
   async obtenerEstadisticas(campanaId) {
     const campana = await Campana.findById(campanaId);
     if (!campana) {
@@ -119,6 +135,7 @@ class CampanaService {
       noContactadas
     };
   }
+
 }
 
 module.exports = new CampanaService();

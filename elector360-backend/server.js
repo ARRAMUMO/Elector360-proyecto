@@ -131,6 +131,21 @@ if (process.env.ENABLE_RPA_WORKER === 'true') {
 
 // Manejo de errores no capturados
 process.on('unhandledRejection', (err) => {
+  const msg = err?.message || String(err);
+  // Errores de Puppeteer/Chromium que ocurren al cerrar/recrear el browser — son benignos
+  const esPuppeteerBenigno = [
+    'Session closed',
+    'Target closed',
+    'TargetCloseError',
+    'Protocol error',
+    'Requesting main frame too early',
+  ].some(s => msg.includes(s));
+
+  if (esPuppeteerBenigno) {
+    console.warn(`⚠️ Puppeteer error ignorado (proceso continúa): ${msg.split('\n')[0]}`);
+    return;
+  }
+
   console.error('UNHANDLED REJECTION! 💥 Shutting down...');
   console.error(err.name, err.message);
   server.close(() => {

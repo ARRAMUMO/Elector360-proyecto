@@ -21,8 +21,9 @@ class RegistraduriaScrap {
   /**
    * Limpiar lock files del perfil de Chrome antes de lanzar.
    * Mata procesos Chrome huérfanos y elimina los lock files.
+   * Es async para poder esperar al OS antes de relanzar.
    */
-  _limpiarLockFiles() {
+  async _limpiarLockFiles() {
     const fs = require('fs');
     const path = require('path');
     const { execSync } = require('child_process');
@@ -37,6 +38,7 @@ class RegistraduriaScrap {
 
     // Siempre matar cualquier Chrome usando este perfil (por PID si lo tenemos, sino por nombre de perfil).
     // Esto limpia tanto procesos huérfanos de sesiones anteriores como el proceso actual.
+    let mato = false;
     if (this._chromePid) {
       try {
         if (process.platform === 'win32') {
@@ -45,6 +47,7 @@ class RegistraduriaScrap {
           execSync(`kill -9 ${this._chromePid} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
         }
         console.log(`🔒 Chrome (PID ${this._chromePid}) terminado antes de reiniciar`);
+        mato = true;
       } catch (_) { /* ya cerrado */ }
       this._chromePid = null;
     } else {
@@ -58,7 +61,13 @@ class RegistraduriaScrap {
         } else {
           execSync(`pkill -f "${exeName.replace('.exe', '')}.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore', timeout: 5000 });
         }
+        mato = true;
       } catch (_) { /* no hay procesos bloqueando, ok */ }
+    }
+
+    // Si se mató un Chrome, esperar a que el OS libere el lock del perfil antes de relanzar
+    if (mato) {
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
 
     // Eliminar lock files que Chrome no haya limpiado (por cierre forzado)
@@ -84,7 +93,7 @@ class RegistraduriaScrap {
 
   async _intentarInit() {
     try {
-      this._limpiarLockFiles();
+      await this._limpiarLockFiles();
 
       const { createCursor } = require('ghost-cursor');
       const UserAgent = require('user-agents');

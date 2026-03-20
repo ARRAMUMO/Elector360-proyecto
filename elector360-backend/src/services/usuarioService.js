@@ -109,6 +109,26 @@ class UsuarioService {
       }
     });
 
+    // Asignación directa del array de campañas (para COORDINADOR multi-campaña)
+    if (Array.isArray(datosActualizacion.campanas)) {
+      usuario.campanas = datosActualizacion.campanas;
+      // Si no viene campana principal y el array tiene elementos, usar el primero
+      if (!datosActualizacion.campana && datosActualizacion.campanas.length > 0) {
+        const primeraCampana = datosActualizacion.campanas[0];
+        // Solo cambiar campana principal si no está asignada o si cambió
+        if (!usuario.campana) {
+          usuario.campana = primeraCampana;
+        }
+      }
+    } else if (datosActualizacion.campana) {
+      // Compatibilidad: si solo viene campana individual, sincronizar al array
+      const campanaId = String(datosActualizacion.campana);
+      const yaEnArray = (usuario.campanas || []).some(c => String(c._id || c) === campanaId);
+      if (!yaEnArray) {
+        usuario.campanas = [...(usuario.campanas || []), datosActualizacion.campana];
+      }
+    }
+
     // Email solo si no existe
     if (datosActualizacion.email && datosActualizacion.email !== usuario.email) {
       const existente = await Usuario.findOne({ email: datosActualizacion.email });

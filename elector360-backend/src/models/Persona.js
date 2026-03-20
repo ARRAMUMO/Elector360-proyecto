@@ -51,12 +51,19 @@ const personaSchema = new mongoose.Schema({
     default: ESTADO_CONTACTO.NO_CONTACTADO
   },
 
-  // Campaña a la que pertenece
+  // Campaña principal a la que pertenece
   campana: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Campana',
     default: null
   },
+
+  // Campañas aliadas — misma persona visible en múltiples campañas sin duplicar el registro
+  // Solo COORDINADOR/ADMIN pueden agregar campañas aliadas al importar
+  campanas: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Campana'
+  }],
 
   // Relación con líder (se asigna al guardar por primera vez)
   lider: {
@@ -125,6 +132,7 @@ const personaSchema = new mongoose.Schema({
 // Índices
 personaSchema.index({ documento: 1, campana: 1 }, { unique: true });
 personaSchema.index({ campana: 1 });
+personaSchema.index({ campanas: 1 });
 personaSchema.index({ campana: 1, 'lider.id': 1 });
 personaSchema.index({ 'lider.id': 1 });
 personaSchema.index({ estadoRPA: 1 });

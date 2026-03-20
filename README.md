@@ -11,6 +11,7 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Exportacion** a Excel y CSV
 - **Estado RPA visible** en tabla principal (Actualizado, Pendiente, Error, Sin consultar)
 - **Cambio rapido de estado** de contacto (Pendiente, Contactado, Confirmado, No Contactado)
+- **Aviso de conflicto al importar**: si una persona ya pertenece a otro lider de la misma campana, se omite y se muestra un reporte detallado en el modal sin cerrar automaticamente
 
 ### Consulta RPA (Automatizacion)
 - **Consulta individual** por cedula en la Registraduria Nacional (`https://wsp.registraduria.gov.co/censo/consultar`)
@@ -32,7 +33,12 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 ### Organizacion Electoral
 - **Vista por mesas de votacion** con estadisticas
 - **Filtros avanzados** por departamento, municipio, puesto, mesa, zona
-- **Dashboard** con metricas generales
+- **Dashboard** con metricas generales (Total Personas, Actualizadas, Pendientes, Consultas Hoy)
+
+### Dashboard Multi-Campana (Coordinador)
+- **Tarjetas de campana**: el Coordinador ve todas sus campanas asignadas con estadisticas en tiempo real (total personas, lideres, confirmadas)
+- **Seleccion de campana activa**: al hacer clic en una tarjeta, se carga el contexto completo de esa campana (personas, E-14, mesas, etc.)
+- **Auto-seleccion**: si el Coordinador solo tiene una campana asignada, se selecciona automaticamente
 
 ### Resultados E-14 (Escrutinio de Mesa)
 - **Registro de resultados** por mesa de votacion: votos candidato, votos lista, total urna, inscritos E-11
@@ -52,7 +58,10 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 ### Sistema de Usuarios
 - **Roles**: ADMIN (control total), COORDINADOR (gestion de equipo) y LIDER (gestion de sus personas)
 - **Autenticacion JWT** con refresh tokens
-- **Panel de administracion** de usuarios
+- **Panel de administracion** de usuarios con busqueda por nombre o email
+- **ADMIN ve todos los usuarios** sin excepcion, independientemente de la campana activa
+- **Multi-campana para Coordinador**: un Coordinador puede ser asignado a multiples campanas; el formulario de usuario muestra checkboxes para seleccionarlas y un selector de campana principal
+- **Asignacion de lider a persona**: Admin y Coordinador pueden reasignar el lider de cualquier persona
 
 ## Arquitectura
 
@@ -62,8 +71,8 @@ Elector360-proyecto/
 │   └── src/
 │       ├── config/            # Constantes y configuracion
 │       ├── controllers/       # Controladores de la API
-│       ├── middleware/        # Auth, validacion, upload
-│       ├── models/            # Modelos MongoDB (Persona, Usuario, ColaConsulta, ResultadoMesa)
+│       ├── middleware/        # Auth, validacion, upload, campaignScope
+│       ├── models/            # Modelos MongoDB (Persona, Usuario, ColaConsulta, ResultadoMesa, Campana)
 │       ├── routes/            # Definicion de rutas
 │       ├── services/          # Logica de negocio
 │       ├── utils/             # Utilidades (ApiError, asyncHandler)
@@ -77,7 +86,7 @@ Elector360-proyecto/
 ├── elector360-frontend/       # SPA - React + Vite
 │   └── src/
 │       ├── components/        # Componentes reutilizables
-│       │   ├── common/        # Alert, Spinner, etc.
+│       │   ├── common/        # Alert, Spinner, Toast, etc.
 │       │   └── layout/        # AppLayout, Sidebar
 │       ├── context/           # AuthContext
 │       ├── pages/             # Paginas de la aplicacion
@@ -223,12 +232,25 @@ npm run build
 | PUT | `/api/v1/personas/:id` | Actualizar persona |
 | DELETE | `/api/v1/personas/:id` | Eliminar (Admin) |
 | GET | `/api/v1/personas/documento/:doc` | Buscar por cedula |
-| POST | `/api/v1/personas/importar` | Importar desde Excel (Admin) |
-| GET | `/api/v1/personas/plantilla-importacion` | Descargar plantilla (Admin) |
+| POST | `/api/v1/personas/importar` | Importar desde Excel (Admin/Coordinador) |
+| GET | `/api/v1/personas/plantilla-importacion` | Descargar plantilla |
 | GET | `/api/v1/personas/mesas` | Mesas de votacion |
 | GET | `/api/v1/personas/mesas/detalle` | Personas por mesa |
 | GET | `/api/v1/personas/export/csv` | Exportar CSV |
 | GET | `/api/v1/personas/export/excel` | Exportar Excel |
+| PUT | `/api/v1/personas/:id/asignar-lider` | Reasignar lider (Admin/Coordinador) |
+
+### Campanas
+
+| Metodo | Endpoint | Descripcion | Acceso |
+|--------|----------|-------------|--------|
+| GET | `/api/v1/campanas` | Listar campanas | Admin |
+| POST | `/api/v1/campanas` | Crear campana | Admin |
+| GET | `/api/v1/campanas/:id` | Obtener campana | Admin |
+| PUT | `/api/v1/campanas/:id` | Actualizar campana | Admin |
+| DELETE | `/api/v1/campanas/:id` | Eliminar campana | Admin |
+| GET | `/api/v1/campanas/:id/estadisticas` | Estadisticas de campana | Admin |
+| GET | `/api/v1/campanas/mis-campanas` | Campanas del coordinador con stats | Coordinador, Admin |
 
 ### Operaciones Masivas (Admin)
 
@@ -275,7 +297,7 @@ npm run build
 
 | Metodo | Endpoint | Descripcion |
 |--------|----------|-------------|
-| GET | `/api/v1/usuarios` | Listar usuarios |
+| GET | `/api/v1/usuarios` | Listar usuarios (`?search=nombre`) |
 | POST | `/api/v1/usuarios` | Crear usuario |
 | GET | `/api/v1/usuarios/:id` | Obtener usuario por ID |
 | PUT | `/api/v1/usuarios/:id` | Actualizar usuario |
@@ -286,16 +308,18 @@ npm run build
 ## Roles de Usuario
 
 ### ADMIN
-- Gestion completa de usuarios y campanas
+- Gestion completa de usuarios y campanas (ve TODOS los usuarios sin excepcion)
 - Importacion masiva de personas desde Excel
 - Control del worker RPA y operaciones masivas
 - Gestion de errores (reintentar/eliminar)
 - Acceso a estadisticas globales
 - Eliminacion de cualquier registro
+- Asignacion de multiples campanas a Coordinadores
 - Modulo E-14: acceso total (importar, verificar, limpiar, exportar, vista por lider)
 
 ### COORDINADOR
 - Gestion de usuarios de su campana (crear, editar, desactivar lideres)
+- Puede ser asignado a multiples campanas; gestiona cada una de forma independiente desde el Dashboard
 - Eliminacion de personas
 - Modulo E-14: importar Excel/PDFs, verificar votos, limpiar resultados, exportar informes
 - Vista por Lider: ver personas de cualquier lider con estado de voto y descargar informe filtrado

@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const personaService = require('../services/personaService');
 const Persona = require('../models/Persona');
+const Usuario = require('../models/Usuario');
 const ApiError = require('../utils/ApiError');
 const path = require('path');
 const fs = require('fs').promises;
@@ -22,7 +23,7 @@ exports.listarPersonas = asyncHandler(async (req, res) => {
     mesa,
     nombrePuesto,
     zona,
-    campanaFilter: req.campanaFilter
+    campanaFilter: req.campanaFilterPersonas || req.campanaFilter
   };
 
   // Si es LIDER, solo ve sus personas
@@ -299,7 +300,23 @@ exports.importarDesdeExcel = asyncHandler(async (req, res) => {
   }
 
   try {
-    const resultado = await personaService.importarDesdeExcel(req.file.path, req.user, req.campanaId);
+    // ADMIN/COORDINADOR pueden seleccionar el lider y campaña destino
+    let usuarioLider = req.user;
+    let campanaId = req.campanaId;
+
+    const { liderId, campanaId: campanaIdBody } = req.body || {};
+
+    if (liderId && (req.user.rol === 'ADMIN' || req.user.rol === 'COORDINADOR')) {
+      const liderEncontrado = await Usuario.findById(liderId).select('perfil email rol').lean();
+      if (!liderEncontrado) throw new ApiError(400, 'El líder seleccionado no existe');
+      usuarioLider = liderEncontrado;
+    }
+
+    if (campanaIdBody && req.user.rol === 'ADMIN') {
+      campanaId = campanaIdBody;
+    }
+
+    const resultado = await personaService.importarDesdeExcel(req.file.path, usuarioLider, campanaId);
     await fs.unlink(req.file.path);
 
     res.json({

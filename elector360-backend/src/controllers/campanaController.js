@@ -91,3 +91,34 @@ exports.obtenerEstadisticas = asyncHandler(async (req, res) => {
     data: stats
   });
 });
+
+/**
+ * @desc    Obtener las campañas del coordinador autenticado con stats básicas
+ * @route   GET /api/v1/campanas/mis-campanas
+ * @access  Private (Coordinador / Admin)
+ */
+exports.getMisCampanas = asyncHandler(async (req, res) => {
+  // Para ADMIN: devuelve todas. Para COORDINADOR: devuelve las de su array campanas[]
+  // más la campana principal si existe
+  let campanaIds = [];
+
+  if (req.user.rol === 'ADMIN') {
+    // ADMIN ve todas las campañas (sin límite práctico, usar listar para paginación)
+    const { campanas } = await campanaService.listarCampanas({ limit: 200 });
+    return res.json({ success: true, data: campanas });
+  }
+
+  // COORDINADOR: recopilar IDs únicos
+  const idsSet = new Set();
+  if (req.user.campana) idsSet.add(String(req.user.campana._id || req.user.campana));
+  (req.user.campanas || []).forEach(c => idsSet.add(String(c._id || c)));
+  campanaIds = [...idsSet];
+
+  if (campanaIds.length === 0) {
+    return res.json({ success: true, data: [] });
+  }
+
+  const campanasConStats = await campanaService.listarPorIds(campanaIds);
+  res.json({ success: true, data: campanasConStats });
+});
+

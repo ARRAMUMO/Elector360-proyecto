@@ -11,12 +11,17 @@ const api = axios.create({
   }
 });
 
-// Interceptor para agregar token automáticamente
+// Interceptor para agregar token y campaña activa automáticamente
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Si el COORDINADOR tiene una campaña seleccionada, enviarla en el header
+    const campanaActiva = localStorage.getItem('campanaActiva');
+    if (campanaActiva) {
+      config.headers['X-Campana-Id'] = campanaActiva;
     }
     return config;
   },

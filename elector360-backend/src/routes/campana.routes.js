@@ -2,10 +2,17 @@ const express = require('express');
 const router = express.Router();
 const campanaController = require('../controllers/campanaController');
 const { protect } = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/validateRole');
+const { requireAdmin, requireCoordinador } = require('../middleware/validateRole');
 
-// Todas las rutas requieren autenticación y ser ADMIN
+// Todas las rutas requieren autenticación
 router.use(protect);
+
+// Ruta para COORDINADOR (y ADMIN): ver sus propias campañas con stats
+// DEBE ir antes de requireAdmin para que los coordinadores puedan acceder
+router.get('/mis-campanas', requireCoordinador, campanaController.getMisCampanas);
+
+
+// El resto de rutas requieren ser ADMIN
 router.use(requireAdmin);
 
 // Listar y crear

@@ -9,13 +9,17 @@ const usuarioService = require('../services/usuarioService');
 exports.listarUsuarios = asyncHandler(async (req, res) => {
   const { page, limit, search, rol, estado } = req.query;
 
+  // ADMIN ve TODOS los usuarios sin excepción (sin filtro de campaña)
+  // COORDINADOR ve solo los de su campaña
+  const campanaFilter = req.user.rol === 'ADMIN' ? {} : req.campanaFilter;
+
   const resultado = await usuarioService.listarUsuarios({
     page,
-    limit,
+    limit: limit || 200,
     search,
     rol,
     estado,
-    campanaFilter: req.campanaFilter
+    campanaFilter
   });
 
   res.json({

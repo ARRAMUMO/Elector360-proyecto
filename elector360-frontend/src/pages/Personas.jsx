@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import personaService from '../services/personaService';
 import authService from '../services/authService';
+import campanaService from '../services/campanaService';
 import useDebounce from '../hooks/useDebounce';
 import Alert from '../components/common/Alert';
 import Spinner from '../components/common/Spinner';
@@ -103,6 +104,11 @@ function Personas() {
   const [importando, setImportando] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState(null);
+  const [importLiderId, setImportLiderId] = useState('');
+  const [importCampanaId, setImportCampanaId] = useState('');
+  const [importLideres, setImportLideres] = useState([]);
+  const [importCampanas, setImportCampanas] = useState([]);
+  const [loadingImportData, setLoadingImportData] = useState(false);
 
   // Debounce del search
   const debouncedSearch = useDebounce(search, 500);
@@ -210,11 +216,14 @@ function Personas() {
     setImportResult(null);
     setImportError(null);
 
-    const resultado = await personaService.importarDesdeExcel(importFile);
+    const opciones = {};
+    if (importLiderId) opciones.liderId = importLiderId;
+    if (importCampanaId) opciones.campanaId = importCampanaId;
+    const resultado = await personaService.importarDesdeExcel(importFile, opciones);
 
     if (resultado.success) {
-      cerrarImportModal();
-      setAlert({ type: 'success', message: `Importación exitosa: ${resultado.data.creadas} creadas, ${resultado.data.actualizadas} actualizadas` });
+      // Mostrar resultados en el modal (no cerrar automáticamente)
+      setImportResult(resultado.data);
       cargarPersonas();
     } else {
       setImportError(resultado.error);
@@ -230,11 +239,42 @@ function Personas() {
     }
   };
 
+  const abrirImportModal = async () => {
+    setShowImportModal(true);
+    setImportFile(null);
+    setImportResult(null);
+    setImportError(null);
+    setImportLiderId('');
+    setImportCampanaId('');
+    setImportLideres([]);
+    setImportCampanas([]);
+
+    if (esAdmin || esCoordi) {
+      setLoadingImportData(true);
+      try {
+        // Cargar líderes
+        const resUsuarios = await personaService.listarUsuariosParaAsignar();
+        if (resUsuarios.success) {
+          setImportLideres(resUsuarios.usuarios.filter(u => u.rol === 'LIDER'));
+        }
+        // Cargar campañas (solo ADMIN)
+        if (esAdmin) {
+          const resCampanas = await campanaService.listar();
+          if (resCampanas.success) setImportCampanas(resCampanas.data);
+        }
+      } finally {
+        setLoadingImportData(false);
+      }
+    }
+  };
+
   const cerrarImportModal = () => {
     setShowImportModal(false);
     setImportFile(null);
     setImportResult(null);
     setImportError(null);
+    setImportLiderId('');
+    setImportCampanaId('');
   };
 
   const abrirModal = () => {
@@ -641,7 +681,7 @@ function Personas() {
             CSV
           </button>
           <button
-            onClick={() => setShowImportModal(true)}
+            onClick={abrirImportModal}
             className="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium text-sm"
           >
             <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
@@ -1410,6 +1450,52 @@ function Personas() {
                 Descargar Plantilla Excel
               </button>
 
+              {/* Selector de campaña y líder (ADMIN/COORDINADOR) */}
+              {(esAdmin || esCoordi) && (
+                <div className="space-y-3">
+                  {loadingImportData ? (
+                    <p className="text-sm text-gray-500 text-center py-2">Cargando opciones...</p>
+                  ) : (
+                    <>
+                      {esAdmin && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Campaña <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={importCampanaId}
+                            onChange={e => { setImportCampanaId(e.target.value); setImportLiderId(''); }}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          >
+                            <option value="">— Selecciona una campaña —</option>
+                            {importCampanas.map(c => (
+                              <option key={c._id} value={c._id}>{c.nombre}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Líder asignado <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={importLiderId}
+                          onChange={e => setImportLiderId(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="">— Selecciona un líder —</option>
+                          {importLideres.map(u => (
+                            <option key={u._id} value={u._id}>
+                              {u.perfil?.nombres} {u.perfil?.apellidos} ({u.email})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Upload area */}
               <div className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${
                 importFile ? 'border-purple-400 bg-purple-50' : 'border-gray-300 hover:border-purple-400'
@@ -1453,9 +1539,9 @@ function Personas() {
               {/* Botón importar */}
               <button
                 onClick={handleImportar}
-                disabled={!importFile || importando}
+                disabled={!importFile || importando || ((esAdmin || esCoordi) && !importLiderId) || (esAdmin && !importCampanaId)}
                 className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-                  importFile && !importando
+                  importFile && !importando && ((!esAdmin && !esCoordi) || importLiderId) && (!esAdmin || importCampanaId)
                     ? 'bg-purple-600 text-white hover:bg-purple-700'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
@@ -1473,39 +1559,89 @@ function Personas() {
 
               {/* Resultados de importación */}
               {importResult && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                  <h4 className="font-bold text-green-900 text-sm">Resultado de Importacion</h4>
-                  <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="bg-white rounded-lg p-3 shadow-sm">
-                      <p className="text-xs text-gray-500">Total</p>
-                      <p className="text-lg font-bold text-gray-900">{importResult.total}</p>
+                <div className="space-y-3">
+                  {/* Resumen general */}
+                  <div className={`rounded-xl p-4 space-y-3 ${importResult.enOtroLider > 0 ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                    <h4 className={`font-bold text-sm ${importResult.enOtroLider > 0 ? 'text-amber-900' : 'text-green-900'}`}>
+                      Resultado de Importacion
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div className="bg-white rounded-lg p-2 shadow-sm">
+                        <p className="text-xs text-gray-500">Total</p>
+                        <p className="text-lg font-bold text-gray-900">{importResult.total}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 shadow-sm border-l-4 border-green-500">
+                        <p className="text-xs text-green-600">Creadas</p>
+                        <p className="text-lg font-bold text-green-700">{importResult.creadas}</p>
+                      </div>
+                      <div className="bg-white rounded-lg p-2 shadow-sm border-l-4 border-blue-500">
+                        <p className="text-xs text-blue-600">Actualizadas</p>
+                        <p className="text-lg font-bold text-blue-700">{importResult.actualizadas}</p>
+                      </div>
+                      {importResult.alianzadas > 0 && (
+                        <div className="bg-white rounded-lg p-2 shadow-sm border-l-4 border-purple-500">
+                          <p className="text-xs text-purple-600">Alianzas</p>
+                          <p className="text-lg font-bold text-purple-700">{importResult.alianzadas}</p>
+                        </div>
+                      )}
+                      <div className="bg-white rounded-lg p-2 shadow-sm border-l-4 border-red-500">
+                        <p className="text-xs text-red-600">Errores</p>
+                        <p className="text-lg font-bold text-red-700">{importResult.errores}</p>
+                      </div>
                     </div>
-                    <div className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-green-500">
-                      <p className="text-xs text-green-600">Creadas</p>
-                      <p className="text-lg font-bold text-green-700">{importResult.creadas}</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-blue-500">
-                      <p className="text-xs text-blue-600">Actualizadas</p>
-                      <p className="text-lg font-bold text-blue-700">{importResult.actualizadas}</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-red-500">
-                      <p className="text-xs text-red-600">Errores</p>
-                      <p className="text-lg font-bold text-red-700">{importResult.errores}</p>
-                    </div>
+
+                    {/* Errores de validación */}
+                    {importResult.detallesErrores?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-red-800 mb-1">Errores de validación:</p>
+                        <div className="max-h-24 overflow-y-auto space-y-1">
+                          {importResult.detallesErrores.map((err, i) => (
+                            <div key={i} className="text-xs bg-white rounded px-2 py-1 flex justify-between border border-red-100">
+                              <span className="font-mono">{err.cedula} (fila {err.fila})</span>
+                              <span className="text-red-600 ml-2">{err.error}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {importResult.detallesErrores?.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-medium text-red-800 mb-1">Errores:</p>
-                      <div className="max-h-32 overflow-y-auto space-y-1">
-                        {importResult.detallesErrores.map((err, i) => (
-                          <div key={i} className="text-xs bg-white rounded px-2 py-1 flex justify-between border border-red-100">
-                            <span className="font-mono">{err.cedula} (fila {err.fila})</span>
-                            <span className="text-red-600 ml-2">{err.error}</span>
+
+                  {/* Aviso: personas en otro líder */}
+                  {importResult.enOtroLider > 0 && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xl">⚠️</span>
+                        <p className="text-sm font-bold text-amber-900">
+                          {importResult.enOtroLider} persona{importResult.enOtroLider > 1 ? 's' : ''} ya pertenece{importResult.enOtroLider > 1 ? 'n' : ''} a otro líder
+                        </p>
+                      </div>
+                      <p className="text-xs text-amber-700 mb-2">
+                        Estas personas no fueron modificadas. Si deseas reasignarlas, hazlo desde el perfil individual.
+                      </p>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {importResult.detallesOtroLider.map((p, i) => (
+                          <div key={i} className="text-xs bg-white border border-amber-200 rounded-lg px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                            <div>
+                              <span className="font-mono font-bold text-gray-700">{p.cedula}</span>
+                              {p.nombres && <span className="ml-2 text-gray-600">{p.nombres}</span>}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="text-amber-600">Líder actual:</span>
+                              <span className="font-medium text-amber-800">{p.liderActual}</span>
+                            </div>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Botón cerrar */}
+                  <button
+                    onClick={cerrarImportModal}
+                    className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium text-sm transition-colors"
+                  >
+                    Cerrar
+                  </button>
                 </div>
               )}
             </div>
