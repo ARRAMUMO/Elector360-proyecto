@@ -12,6 +12,9 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Estado RPA visible** en tabla principal (Actualizado, Pendiente, Error, Sin consultar)
 - **Cambio rapido de estado** de contacto (Pendiente, Contactado, Confirmado, No Contactado)
 - **Aviso de conflicto al importar**: si una persona ya pertenece a otro lider de la misma campana, se omite y se muestra un reporte detallado en el modal sin cerrar automaticamente
+- **Asignar lider al crear**: Admin y Coordinador pueden seleccionar a que lider asignar la nueva persona directamente desde el modal de creacion
+- **Filtrar por lider desde Usuarios**: el boton "Ver personas" en la tabla de usuarios navega a /personas con filtro por lider activo y banner informativo
+- **Modal con botones siempre visibles**: el modal de nueva persona usa layout flex con footer sticky, los botones Cancelar/Crear Persona son siempre accesibles sin importar el scroll
 
 ### Consulta RPA (Automatizacion)
 - **Consulta individual** por cedula en la Registraduria Nacional (`https://wsp.registraduria.gov.co/censo/consultar`)
@@ -47,7 +50,11 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Analisis cruzado** ResultadoMesa x Personas: calcula cuantas personas registradas hay en cada mesa y la efectividad del candidato
 - **Verificacion de votos**: cruza todos los resultados E-14 con las personas de la campana y asigna estado de voto (Cumplido / Verificable / No cumplido) en un solo proceso batch
 - **Normalizacion inteligente de puestos**: elimina prefijos (I.E., COL, IED, ITA...), sufijos de bloque/sede y maneja truncacion de 30 caracteres del Excel oficial mediante busqueda fuzzy de dos niveles
-- **Vista por Lider** (Admin/Coordinador): selector de lider con tabla de sus personas y estado de voto calculado dinamicamente
+- **Regla de cumplimiento por mesa**: una persona es CUMPLIDO solo si los votos del candidato en su mesa son >= al total de personas registradas en esa mesa (todos los lideres incluidos). Si comparte mesa con otras personas, se requiere que los votos cubran a todos para ser CUMPLIDO; de lo contrario es VERIFICABLE
+- **Vista por Lider** (Admin/Coordinador): selector de lider con tabla de sus personas y estado de voto calculado dinamicamente; boton "Verificar votos" disponible tanto en vista lider como en informe lider
+- **Tarjetas de resumen consistentes**: los conteos (Cumplido/Verificable/No cumplido) usan el estadoMesa calculado en tiempo real y el filtro de la tabla aplica el mismo criterio, garantizando que el numero de la tarjeta coincide con el numero de filas al hacer clic
+- **Alerta de municipio incorrecto al importar**: si el nombre de un puesto de votacion en el Excel no coincide con el municipio real segun las Personas de la campana (datos de Registraduria), se muestra una advertencia detallada sin bloquear la importacion
+- **Verificacion de cobertura de puestos**: endpoint y modal para cruzar puestos unicos de Personas vs ResultadoMesa, mostrando que puestos no tienen resultado importado, cuales resultados no tienen personas y cuales coinciden
 - **Exportacion de informes Excel** con selector de tipo:
   - *Personas*: documento, nombres, apellidos, telefono, municipio, zona, puesto, mesa, lider, estado contacto, estado voto, nota
   - *Resumen por mesa*: departamento, municipio, zona, puesto, mesa, votos candidato, votos lista, personas, efectividad %, estado voto
@@ -62,6 +69,8 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **ADMIN ve todos los usuarios** sin excepcion, independientemente de la campana activa
 - **Multi-campana para Coordinador**: un Coordinador puede ser asignado a multiples campanas; el formulario de usuario muestra checkboxes para seleccionarlas y un selector de campana principal
 - **Asignacion de lider a persona**: Admin y Coordinador pueden reasignar el lider de cualquier persona
+- **Ver personas de un lider**: boton directo en la tabla de usuarios para navegar a /personas filtrado por ese lider
+- **Selector de campana en formulario LIDER**: Coordinador puede asignar campana al crear o editar un usuario con rol LIDER
 
 ## Arquitectura
 
@@ -292,6 +301,7 @@ npm run build
 | POST | `/api/v1/e14/verificar-votos` | Verificar cumplimiento cruzando E-14 x Personas | Admin, Coordinador, Lider |
 | GET | `/api/v1/e14/mis-personas` | Personas del lider con estadoVoto calculado | Todos |
 | GET | `/api/v1/e14/exportar-informe` | Descargar informe Excel (`?tipo=personas\|resumen&liderId=`) | Todos |
+| GET | `/api/v1/e14/verificar-puestos` | Cobertura de puestos: Personas vs ResultadoMesa | Admin, Coordinador |
 
 ### Usuarios (Admin/Coordinador)
 

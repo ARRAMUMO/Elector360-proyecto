@@ -103,6 +103,16 @@ exports.verificarVotos = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Verificar cobertura de puestos: Personas vs ResultadoMesa importados
+ * @route   GET /api/v1/e14/verificar-puestos
+ * @access  Admin, Coordinador
+ */
+exports.verificarPuestosVotacion = asyncHandler(async (req, res) => {
+  const data = await e14Service.verificarPuestosVotacion(req.campanaId);
+  res.json({ success: true, data });
+});
+
+/**
  * @desc    Vista del líder: sus personas con estadoVoto calculado
  * @route   GET /api/v1/e14/mis-personas
  * @access  Lider, Coordinador, Admin

@@ -21,6 +21,7 @@ const personaService = {
       if (filtros.mesa) params.append('mesa', filtros.mesa);
       if (filtros.nombrePuesto) params.append('nombrePuesto', filtros.nombrePuesto);
       if (filtros.zona) params.append('zona', filtros.zona);
+      if (filtros.liderId) params.append('liderId', filtros.liderId);
 
       const response = await api.get(`/personas?${params.toString()}`, {
         signal: options.signal

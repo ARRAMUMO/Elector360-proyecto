@@ -1,6 +1,7 @@
 // src/pages/Usuarios.jsx
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import authService from '../services/authService';
 import Alert from '../components/common/Alert';
@@ -9,6 +10,7 @@ import { useToast } from '../components/common/Toast';
 
 function Usuarios() {
   const { addToast } = useToast();
+  const navigate = useNavigate();
   const currentUser = authService.getStoredUser();
   const esAdmin = currentUser?.rol === 'ADMIN';
   const esCoordinador = currentUser?.rol === 'COORDINADOR';
@@ -408,6 +410,17 @@ function Usuarios() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <div className="flex items-center justify-end space-x-2">
+                          {usuario.rol === 'LIDER' && (
+                            <button
+                              onClick={() => navigate(`/personas?liderId=${usuario._id}`)}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="Ver personas de este líder"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                            </button>
+                          )}
                           <button
                             onClick={() => abrirModal(usuario)}
                             className="text-emerald-600 hover:text-emerald-900"
@@ -495,6 +508,14 @@ function Usuarios() {
                 </div>
 
                 <div className="flex space-x-2 pt-2 border-t border-gray-100">
+                  {usuario.rol === 'LIDER' && (
+                    <button
+                      onClick={() => navigate(`/personas?liderId=${usuario._id}`)}
+                      className="flex-1 px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 text-sm font-medium transition-colors"
+                    >
+                      Ver personas
+                    </button>
+                  )}
                   <button
                     onClick={() => abrirModal(usuario)}
                     className="flex-1 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium transition-colors"
@@ -604,7 +625,7 @@ function Usuarios() {
                 </div>
 
                 {/* Selector de campaña para LIDER (dropdown simple) */}
-                {esAdmin && formData.rol === 'LIDER' && (
+                {(esAdmin || esCoordinador) && formData.rol === 'LIDER' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Campana

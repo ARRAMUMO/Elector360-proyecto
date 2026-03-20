@@ -207,6 +207,7 @@ function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExporta
   const [loading, setLoading] = useState(true);
   const [filtro, setFiltro] = useState(filtroInicial);
   const [expandida, setExpandida] = useState(null);
+  const [verificando, setVerificando] = useState(false);
 
   useEffect(() => {
     if (!liderId) return;
@@ -223,13 +224,15 @@ function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExporta
   if (!datos) return <div className="text-center py-10 text-gray-400 text-sm">Error al cargar datos</div>;
 
   const { mesas, resumen } = datos;
+  // Regla: si una mesa tiene varias personas, es CUMPLIDO solo si votos >= total mesa.
+  // Los conteos de las tarjetas y el filtro de la tabla usan estadoMesa (calculado en tiempo real),
+  // no estadoVoto de DB (que puede ser de una verificación anterior).
   const mesasFiltradas = filtro === 'TODOS' ? mesas : mesas.filter(m => m.estadoMesa === filtro);
 
-  // Conteos por persona (como producción)
-  const todasPersonas = mesas.flatMap(m => m.personas);
-  const pCumplido    = todasPersonas.filter(p => p.estadoVoto === 'CUMPLIDO').length;
-  const pVerificable = todasPersonas.filter(p => p.estadoVoto === 'VERIFICABLE').length;
-  const pNoCumplido  = todasPersonas.filter(p => p.estadoVoto !== 'CUMPLIDO' && p.estadoVoto !== 'VERIFICABLE').length;
+  // Conteos por mesa (consistente con el filtro de la tabla)
+  const pCumplido    = mesas.filter(m => m.estadoMesa === 'CUMPLIDO').reduce((s, m) => s + m.personasDelLider, 0);
+  const pVerificable = mesas.filter(m => m.estadoMesa === 'VERIFICABLE').reduce((s, m) => s + m.personasDelLider, 0);
+  const pNoCumplido  = mesas.filter(m => m.estadoMesa === 'NO_CUMPLIDO').reduce((s, m) => s + m.personasDelLider, 0);
 
   const estadoCfg = {
     CUMPLIDO:    { label: 'Cumplido',    bg: 'bg-green-100',  text: 'text-green-800',  dot: 'bg-green-500',  border: 'border-green-300'  },
@@ -291,10 +294,30 @@ function VistaInformeLider({ liderId, campanaResumen, campanaAnalisis, onExporta
       {/* Acciones */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-sm text-gray-500">{mesasFiltradas.length} mesa{mesasFiltradas.length !== 1 ? 's' : ''}</p>
-        <button onClick={onExportar} disabled={descargando}
-          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
-          {descargando ? '⏳ Generando...' : '⬇ Informe Excel'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={async () => {
+              setVerificando(true);
+              await e14Service.verificarVotos();
+              setVerificando(false);
+              if (liderId) {
+                setLoading(true);
+                e14Service.informeLider(liderId).then(res => {
+                  if (res.success) setDatos(res.data);
+                  setLoading(false);
+                });
+              }
+            }}
+            disabled={verificando}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            {verificando ? '⏳ Verificando...' : '✓ Verificar votos'}
+          </button>
+          <button onClick={onExportar} disabled={descargando}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors">
+            {descargando ? '⏳ Generando...' : '⬇ Informe Excel'}
+          </button>
+        </div>
       </div>
 
       {/* Tabla de mesas */}
@@ -478,6 +501,11 @@ export default function E14() {
   const [verificando, setVerificando] = useState(false);
   const [modalVerificacion, setModalVerificacion] = useState(null);
   const [descargando, setDescargando] = useState(false);
+
+  // ── Verificar puestos de votación ──
+  const [verificandoPuestos, setVerificandoPuestos] = useState(false);
+  const [modalPuestos, setModalPuestos] = useState(null); // { resumen, sinResultado, sinPersonas, coincidencias }
+  const [tabPuestos, setTabPuestos] = useState('sinResultado');
 
   // ── Vista por líder (coordinador) ──
   const [listaLideres, setListaLideres] = useState([]);
@@ -739,9 +767,14 @@ export default function E14() {
     setImportando(false);
     if (res.success) {
       const d = res.data;
-      showToast(`${d.importados} mesas importadas correctamente${d.errores?.length ? ` (${d.errores.length} errores)` : ''}`);
-      setModalExcel(false);
+      setResultadoImport(d);
       cargarDatos();
+      if (!d.advertencias?.length) {
+        setModalExcel(false);
+        showToast(`${d.importados} mesas importadas correctamente${d.errores?.length ? ` (${d.errores.length} errores)` : ''}`);
+      } else {
+        showToast(`${d.importados} mesas importadas · ${d.advertencias.length} advertencia${d.advertencias.length > 1 ? 's' : ''} de municipio`, 'warning');
+      }
     } else {
       setErrorImport(res.error);
     }
@@ -767,6 +800,18 @@ export default function E14() {
     if (res.success) {
       setModalVerificacion(res.data);
       cargarDatos();
+    } else {
+      showToast(res.error, 'error');
+    }
+  };
+
+  const handleVerificarPuestos = async () => {
+    setVerificandoPuestos(true);
+    const res = await e14Service.verificarPuestosVotacion();
+    setVerificandoPuestos(false);
+    if (res.success) {
+      setModalPuestos(res.data);
+      setTabPuestos('sinResultado');
     } else {
       showToast(res.error, 'error');
     }
@@ -830,6 +875,14 @@ export default function E14() {
                 className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
               >
                 {verificando ? '⏳ Verificando...' : '✓ Verificar votos'}
+              </button>
+              {/* Verificar cobertura de puestos */}
+              <button
+                onClick={handleVerificarPuestos}
+                disabled={verificandoPuestos}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors"
+              >
+                {verificandoPuestos ? '⏳ Verificando...' : '🗳 Verificar puestos'}
               </button>
             </>}
             {/* Descargar informe Excel — disponible para todos los roles */}
@@ -1649,6 +1702,31 @@ export default function E14() {
                   )}
                 </div>
               )}
+
+              {/* Advertencias de municipio incorrecto */}
+              {resultadoImport?.advertencias?.length > 0 && (
+                <div className="rounded-lg p-3 bg-amber-50 border border-amber-300 text-sm">
+                  <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                    <span>⚠</span> {resultadoImport.advertencias.length} puesto{resultadoImport.advertencias.length > 1 ? 's' : ''} con municipio diferente al registrado
+                  </p>
+                  <p className="text-amber-700 text-xs mt-1 mb-2">
+                    El municipio en el Excel no coincide con el municipio real en el sistema. Verifica los datos:
+                  </p>
+                  <ul className="text-xs space-y-1.5 max-h-40 overflow-y-auto">
+                    {resultadoImport.advertencias.map((a, i) => (
+                      <li key={i} className="border-b border-amber-200 pb-1.5 last:border-0 last:pb-0">
+                        <span className="font-semibold text-amber-900">{a.nombrePuesto}</span>
+                        <span className="block text-amber-700 mt-0.5">
+                          Excel: <strong>{a.municipioExcel}</strong>
+                          <span className="mx-1.5 text-amber-400">→</span>
+                          Sistema: <strong>{a.municipioReal}</strong>
+                          <span className="ml-1.5 text-amber-500">({a.mesas} mesa{a.mesas > 1 ? 's' : ''})</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
@@ -1664,6 +1742,142 @@ export default function E14() {
                 className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 py-2 rounded-lg text-sm transition-colors"
               >
                 {resultadoImport ? 'Cerrar' : 'Cancelar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal verificar puestos de votación */}
+      {modalPuestos && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="font-bold text-gray-900 text-lg">Verificación de puestos de votación</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Cobertura entre Personas registradas y resultados E-14 importados</p>
+              </div>
+              <button onClick={() => setModalPuestos(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none font-light">&times;</button>
+            </div>
+
+            {/* Tarjetas resumen */}
+            <div className="px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-3 border-b border-gray-100 flex-shrink-0">
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
+                <p className="text-2xl font-bold text-blue-700">{modalPuestos.resumen.totalPuestosPersonas}</p>
+                <p className="text-xs text-blue-600 mt-0.5">Puestos en Personas</p>
+              </div>
+              <div className="rounded-lg bg-purple-50 border border-purple-200 p-3 text-center">
+                <p className="text-2xl font-bold text-purple-700">{modalPuestos.resumen.totalPuestosResultados}</p>
+                <p className="text-xs text-purple-600 mt-0.5">Puestos importados</p>
+              </div>
+              <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                <p className="text-2xl font-bold text-green-700">{modalPuestos.resumen.puestosCoinciden}</p>
+                <p className="text-xs text-green-600 mt-0.5">Coinciden</p>
+              </div>
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
+                <p className="text-2xl font-bold text-red-700">{modalPuestos.resumen.puestosSinResultado}</p>
+                <p className="text-xs text-red-600 mt-0.5">Sin resultado</p>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="px-6 pt-3 flex gap-1 border-b border-gray-200 flex-shrink-0">
+              {[
+                { key: 'sinResultado', label: `Sin resultado (${modalPuestos.resumen.puestosSinResultado})`, color: 'text-red-600 border-red-500' },
+                { key: 'sinPersonas',  label: `Sin personas (${modalPuestos.resumen.puestosSinPersonas})`,  color: 'text-orange-600 border-orange-500' },
+                { key: 'coinciden',    label: `Coinciden (${modalPuestos.resumen.puestosCoinciden})`,       color: 'text-green-600 border-green-500' },
+              ].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setTabPuestos(t.key)}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                    tabPuestos === t.key ? t.color : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tabla */}
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {tabPuestos === 'sinResultado' && (
+                modalPuestos.sinResultado.length === 0
+                  ? <p className="text-center py-10 text-gray-400 text-sm">Todos los puestos tienen resultados importados</p>
+                  : <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                          <th className="pb-2 font-medium">Municipio</th>
+                          <th className="pb-2 font-medium">Puesto de votación</th>
+                          <th className="pb-2 font-medium text-right">Personas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalPuestos.sinResultado.map((p, i) => (
+                          <tr key={i} className="border-b border-gray-100 hover:bg-red-50">
+                            <td className="py-2 text-gray-600 pr-3 whitespace-nowrap">{p.municipio}</td>
+                            <td className="py-2 text-gray-900 font-medium">{p.nombrePuesto || <span className="text-gray-400 italic">Sin nombre</span>}</td>
+                            <td className="py-2 text-right font-semibold text-red-700">{p.personas}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
+              {tabPuestos === 'sinPersonas' && (
+                modalPuestos.sinPersonas.length === 0
+                  ? <p className="text-center py-10 text-gray-400 text-sm">Todos los resultados importados tienen personas asociadas</p>
+                  : <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                          <th className="pb-2 font-medium">Municipio</th>
+                          <th className="pb-2 font-medium">Puesto de votación</th>
+                          <th className="pb-2 font-medium text-right">Mesas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalPuestos.sinPersonas.map((p, i) => (
+                          <tr key={i} className="border-b border-gray-100 hover:bg-orange-50">
+                            <td className="py-2 text-gray-600 pr-3 whitespace-nowrap">{p.municipio}</td>
+                            <td className="py-2 text-gray-900 font-medium">{p.nombrePuesto || <span className="text-gray-400 italic">Sin nombre</span>}</td>
+                            <td className="py-2 text-right font-semibold text-orange-700">{p.mesas}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
+              {tabPuestos === 'coinciden' && (
+                modalPuestos.coincidencias.length === 0
+                  ? <p className="text-center py-10 text-gray-400 text-sm">No hay coincidencias</p>
+                  : <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                          <th className="pb-2 font-medium">Municipio</th>
+                          <th className="pb-2 font-medium">Puesto de votación</th>
+                          <th className="pb-2 font-medium text-right">Personas</th>
+                          <th className="pb-2 font-medium text-right">Mesas</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalPuestos.coincidencias.map((p, i) => (
+                          <tr key={i} className="border-b border-gray-100 hover:bg-green-50">
+                            <td className="py-2 text-gray-600 pr-3 whitespace-nowrap">{p.municipio}</td>
+                            <td className="py-2 text-gray-900 font-medium">{p.nombrePuesto || <span className="text-gray-400 italic">Sin nombre</span>}</td>
+                            <td className="py-2 text-right font-semibold text-blue-700">{p.personas}</td>
+                            <td className="py-2 text-right font-semibold text-green-700">{p.mesas}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0">
+              <button
+                onClick={() => setModalPuestos(null)}
+                className="w-full border border-gray-300 text-gray-600 hover:bg-gray-50 py-2 rounded-lg text-sm transition-colors"
+              >
+                Cerrar
               </button>
             </div>
           </div>

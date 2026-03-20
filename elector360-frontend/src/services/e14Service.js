@@ -134,6 +134,15 @@ const e14Service = {
     }
   },
 
+  async verificarPuestosVotacion() {
+    try {
+      const res = await api.get('/e14/verificar-puestos', { timeout: 60000 });
+      return { success: true, data: res.data.data };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.error || 'Error al verificar puestos' };
+    }
+  },
+
   async importarExcel(archivo, metadatos) {
     try {
       const form = new FormData();

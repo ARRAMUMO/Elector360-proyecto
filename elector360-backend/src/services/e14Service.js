@@ -467,6 +467,49 @@ const importarDesdeExcel = async (filePath, metadatos, campanaId) => {
 
   if (resultados.length === 0) throw new ApiError(400, 'El Excel no contiene filas de datos');
 
+  // --- Detectar advertencias de municipio incorrecto ---
+  // Cruza los nombrePuesto del Excel contra la colección Personas (datos de Registraduría)
+  // para alertar cuando el municipio del Excel no coincide con el municipio real.
+  const advertencias = [];
+  try {
+    const nombresUnicos = [...new Set(resultados.filter(r => r.nombrePuesto).map(r => r.nombrePuesto.toUpperCase().trim()))];
+    if (nombresUnicos.length > 0) {
+      const personasPuestos = await Persona.aggregate([
+        { $addFields: { _puestoUpper: { $toUpper: { $trim: { input: '$puesto.nombrePuesto' } } } } },
+        { $match: { _puestoUpper: { $in: nombresUnicos } } },
+        { $group: { _id: '$_puestoUpper', municipioReal: { $first: '$puesto.municipio' } } }
+      ]);
+
+      const municipioMap = {}; // puestoUpper → municipio original de DB
+      for (const p of personasPuestos) {
+        if (p._id) municipioMap[p._id] = p.municipioReal || '';
+      }
+
+      const advertenciasMap = {};
+      for (const r of resultados) {
+        if (!r.nombrePuesto) continue;
+        const keyPuesto = r.nombrePuesto.toUpperCase().trim();
+        const municipioRealOrig = municipioMap[keyPuesto];
+        if (!municipioRealOrig) continue;
+        const municipioRealUp = municipioRealOrig.toUpperCase().trim();
+        const municipioExcelUp = (r.municipio || '').toUpperCase().trim();
+        if (municipioRealUp && municipioRealUp !== municipioExcelUp) {
+          const wKey = `${keyPuesto}|${municipioExcelUp}|${municipioRealUp}`;
+          if (!advertenciasMap[wKey]) {
+            advertenciasMap[wKey] = {
+              nombrePuesto: r.nombrePuesto,
+              municipioExcel: r.municipio,
+              municipioReal: municipioRealOrig,
+              mesas: 0
+            };
+          }
+          advertenciasMap[wKey].mesas++;
+        }
+      }
+      advertencias.push(...Object.values(advertenciasMap));
+    }
+  } catch (_) { /* no bloquear la importación por errores de verificación */ }
+
   // --- Bulk upsert (una sola operación para miles de filas) ---
   const ops = resultados.map(datos => ({
     updateOne: {
@@ -501,7 +544,7 @@ const importarDesdeExcel = async (filePath, metadatos, campanaId) => {
   // Eliminar archivo temporal
   try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
 
-  return { importados, errores, total: resultados.length, candidatoNombre: candidatoNombreExcel, partido: partidoExcel };
+  return { importados, errores, total: resultados.length, candidatoNombre: candidatoNombreExcel, partido: partidoExcel, advertencias };
 };
 
 /**
@@ -992,6 +1035,111 @@ const obtenerInformeLider = async (campanaId, liderId) => {
   return { mesas, resumen };
 };
 
+/**
+ * Verifica la cobertura de puestos de votación:
+ * cruza puestos únicos en Personas vs puestos únicos en ResultadoMesa.
+ * Retorna qué puestos tienen personas pero sin resultados importados,
+ * qué puestos tienen resultados pero sin personas, y cuáles coinciden.
+ */
+const verificarPuestosVotacion = async (campanaId) => {
+  if (!campanaId) throw new ApiError(400, 'No hay campaña activa');
+
+  const [resultadosMesas, todasPersonas] = await Promise.all([
+    ResultadoMesa.find({ campana: campanaId }, {
+      municipio: 1, zona: 1, nombrePuesto: 1
+    }).lean(),
+    Persona.find({ campana: campanaId }, {
+      'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1
+    }).lean()
+  ]);
+
+  // Agrupar puestos de Personas: normKey → datos
+  const mapPersonas = new Map();
+  for (const p of todasPersonas) {
+    const mun = sinTildes((p.puesto?.municipio || '').toLowerCase().trim());
+    const pNorm = normalizarPuesto(p.puesto?.nombrePuesto);
+    const key = `${mun}|${pNorm}`;
+    if (!mapPersonas.has(key)) {
+      mapPersonas.set(key, {
+        municipio: p.puesto?.municipio || '',
+        zona: p.puesto?.zona || '',
+        nombrePuesto: p.puesto?.nombrePuesto || '',
+        personas: 0
+      });
+    }
+    mapPersonas.get(key).personas++;
+  }
+
+  // Agrupar puestos de ResultadoMesa: normKey → datos
+  const mapResultados = new Map();
+  for (const r of resultadosMesas) {
+    const mun = sinTildes((r.municipio || '').toLowerCase().trim());
+    const pNorm = normalizarPuesto(r.nombrePuesto);
+    const key = `${mun}|${pNorm}`;
+    if (!mapResultados.has(key)) {
+      mapResultados.set(key, {
+        municipio: r.municipio || '',
+        zona: r.zona || '',
+        nombrePuesto: r.nombrePuesto || '',
+        mesas: 0
+      });
+    }
+    mapResultados.get(key).mesas++;
+  }
+
+  const coincidencias = [];
+  const sinResultado = [];
+  const sinPersonas = [];
+
+  for (const [key, pDat] of mapPersonas) {
+    if (mapResultados.has(key)) {
+      const rDat = mapResultados.get(key);
+      coincidencias.push({
+        municipio: pDat.municipio,
+        zona: pDat.zona,
+        nombrePuesto: pDat.nombrePuesto,
+        personas: pDat.personas,
+        mesas: rDat.mesas
+      });
+    } else {
+      sinResultado.push({
+        municipio: pDat.municipio,
+        zona: pDat.zona,
+        nombrePuesto: pDat.nombrePuesto,
+        personas: pDat.personas
+      });
+    }
+  }
+
+  for (const [key, rDat] of mapResultados) {
+    if (!mapPersonas.has(key)) {
+      sinPersonas.push({
+        municipio: rDat.municipio,
+        zona: rDat.zona,
+        nombrePuesto: rDat.nombrePuesto,
+        mesas: rDat.mesas
+      });
+    }
+  }
+
+  sinResultado.sort((a, b) => b.personas - a.personas);
+  sinPersonas.sort((a, b) => b.mesas - a.mesas);
+  coincidencias.sort((a, b) => b.personas - a.personas);
+
+  return {
+    resumen: {
+      totalPuestosPersonas: mapPersonas.size,
+      totalPuestosResultados: mapResultados.size,
+      puestosCoinciden: coincidencias.length,
+      puestosSinResultado: sinResultado.length,
+      puestosSinPersonas: sinPersonas.length
+    },
+    sinResultado,
+    sinPersonas,
+    coincidencias
+  };
+};
+
 module.exports = {
   guardarResultado,
   listarResultados,
@@ -1004,5 +1152,6 @@ module.exports = {
   verificarVotosMesas,
   obtenerMisPersonas,
   exportarInforme,
-  obtenerInformeLider
+  obtenerInformeLider,
+  verificarPuestosVotacion
 };

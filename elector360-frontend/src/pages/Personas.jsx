@@ -1,6 +1,7 @@
 // src/pages/Personas.jsx
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import personaService from '../services/personaService';
 import authService from '../services/authService';
 import campanaService from '../services/campanaService';
@@ -28,9 +29,14 @@ const initialFormData = {
 
 function Personas() {
   const { addToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [personas, setPersonas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState(null);
+
+  // Filtro por líder (viene de la URL ?liderId=... desde la página de Usuarios)
+  const [filtroLiderId, setFiltroLiderId] = useState(searchParams.get('liderId') || '');
+  const [filtroLiderNombre, setFiltroLiderNombre] = useState('');
 
   // Usuario actual y rol
 
@@ -98,6 +104,9 @@ function Personas() {
   const [personaEliminar, setPersonaEliminar] = useState(null);
   const [eliminando, setEliminando] = useState(false);
 
+  // Nueva persona: líder a asignar (ADMIN/COORDINADOR)
+  const [liderParaCrear, setLiderParaCrear] = useState('');
+
   // Modal de importación
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -123,7 +132,18 @@ function Personas() {
         abortControllerRef.current.abort();
       }
     };
-  }, [debouncedSearch, estadoContacto, departamento, mesa, pagination.page]);
+  }, [debouncedSearch, estadoContacto, departamento, mesa, pagination.page, filtroLiderId]);
+
+  // Resolver nombre del líder cuando se filtra por él
+  useEffect(() => {
+    if (!filtroLiderId) { setFiltroLiderNombre(''); return; }
+    import('../services/api').then(({ default: api }) => {
+      api.get(`/usuarios/${filtroLiderId}`).then(res => {
+        const u = res.data?.data;
+        if (u) setFiltroLiderNombre(`${u.perfil?.nombres || ''} ${u.perfil?.apellidos || ''}`.trim());
+      }).catch(() => {});
+    });
+  }, [filtroLiderId]);
 
   // Cerrar menús al hacer click fuera
   useEffect(() => {
@@ -154,7 +174,8 @@ function Personas() {
       search: debouncedSearch,
       estadoContacto,
       departamento,
-      mesa
+      mesa,
+      liderId: filtroLiderId || undefined
     }, { signal: controller.signal });
 
     if (controller.signal.aborted || resultado.canceled) return;
@@ -277,10 +298,16 @@ function Personas() {
     setImportCampanaId('');
   };
 
-  const abrirModal = () => {
+  const abrirModal = async () => {
     setFormData(initialFormData);
+    setLiderParaCrear('');
     setShowModal(true);
     setAlert(null);
+    // Cargar líderes si aún no están cargados
+    if ((esAdmin || esCoordi) && importLideres.length === 0) {
+      const res = await personaService.listarUsuariosParaAsignar();
+      if (res.success) setImportLideres(res.usuarios);
+    }
   };
 
   const cerrarModal = () => {
@@ -324,6 +351,8 @@ function Personas() {
     if (Object.keys(datosPersona.puesto).length === 0) {
       delete datosPersona.puesto;
     }
+
+    if (liderParaCrear) datosPersona.liderId = liderParaCrear;
 
     const resultado = await personaService.crear(datosPersona);
 
@@ -690,6 +719,22 @@ function Personas() {
         </div>
       </div>
 
+      {/* Banner de filtro por líder */}
+      {filtroLiderId && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+          <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" /></svg>
+          <span className="text-blue-800 font-medium">
+            Filtrando por líder{filtroLiderNombre ? `: ${filtroLiderNombre}` : ''}
+          </span>
+          <button
+            onClick={() => { setFiltroLiderId(''); setSearchParams({}); }}
+            className="ml-auto text-blue-600 hover:text-blue-900 font-medium flex items-center gap-1"
+          >
+            ✕ Quitar filtro
+          </button>
+        </div>
+      )}
+
       {/* Alertas */}
       {alert && (
         <Alert
@@ -1050,8 +1095,8 @@ function Personas() {
       {/* Modal Crear Persona */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto animate-fade-in">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-white rounded-xl max-w-2xl w-full flex flex-col max-h-[90vh] animate-fade-in">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <h2 className="text-xl font-bold text-gray-900">
                 Nueva Persona
               </h2>
@@ -1065,7 +1110,8 @@ function Personas() {
               </button>
             </div>
 
-            <form onSubmit={handleCrearPersona} className="space-y-6">
+            <form onSubmit={handleCrearPersona} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">
                   Datos Personales
@@ -1143,14 +1189,40 @@ function Personas() {
                 </div>
               </div>
 
-              <div className="flex space-x-3 pt-4 border-t">
-                <button type="button" onClick={cerrarModal} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                  Cancelar
-                </button>
-                <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 transition-colors font-medium">
-                  {saving ? 'Guardando...' : 'Crear Persona'}
-                </button>
-              </div>
+              {/* Líder selector (solo ADMIN/COORDINADOR) */}
+              {(esAdmin || esCoordi) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">
+                    Asignar Líder
+                  </h3>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Líder</label>
+                    <select
+                      value={liderParaCrear}
+                      onChange={e => setLiderParaCrear(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      <option value="">— Asignarme a mí mismo —</option>
+                      {importLideres.filter(u => u.rol === 'LIDER').map(u => (
+                        <option key={u._id} value={u._id}>
+                          {u.perfil?.nombres} {u.perfil?.apellidos}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>{/* fin scrollable */}
+
+            {/* Botones sticky */}
+            <div className="px-6 py-4 border-t border-gray-200 flex-shrink-0 flex gap-3">
+              <button type="button" onClick={cerrarModal} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium">
+                Cancelar
+              </button>
+              <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium">
+                {saving ? 'Guardando...' : 'Crear Persona'}
+              </button>
+            </div>
             </form>
           </div>
         </div>

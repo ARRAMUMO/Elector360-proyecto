@@ -31,6 +31,9 @@ router.post('/importar-excel', requireCoordinador, upload.single('archivo'), e14
 // Verificar cumplimiento de votos (cruza E-14 × Personas) — todos los roles
 router.post('/verificar-votos', requireLider, e14Controller.verificarVotos);
 
+// Verificar cobertura de puestos de votación (Personas vs ResultadoMesa importados)
+router.get('/verificar-puestos', requireCoordinador, e14Controller.verificarPuestosVotacion);
+
 // Vista del líder: sus personas con estadoVoto
 router.get('/mis-personas', requireLider, e14Controller.getMisPersonas);
 

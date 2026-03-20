@@ -12,7 +12,7 @@ const fs = require('fs').promises;
  * @access  Private
  */
 exports.listarPersonas = asyncHandler(async (req, res) => {
-  const { page, limit, search, estadoContacto, estadoRPA, departamento, municipio, mesa, nombrePuesto, zona } = req.query;
+  const { page, limit, search, estadoContacto, estadoRPA, departamento, municipio, mesa, nombrePuesto, zona, liderId } = req.query;
 
   const filtros = {
     search,
@@ -29,6 +29,9 @@ exports.listarPersonas = asyncHandler(async (req, res) => {
   // Si es LIDER, solo ve sus personas
   if (req.user.rol === 'LIDER') {
     filtros.liderId = req.user._id;
+  } else if (liderId) {
+    // ADMIN/COORDINADOR pueden filtrar por un líder específico
+    filtros.liderId = liderId;
   }
 
   const resultado = await personaService.listarPersonas(filtros, { page, limit });
@@ -96,7 +99,17 @@ exports.obtenerPorDocumento = asyncHandler(async (req, res) => {
  * @access  Private
  */
 exports.crearPersona = asyncHandler(async (req, res) => {
-  const persona = await personaService.crearPersona(req.body, req.user, req.campanaId);
+  let usuarioLider = req.user;
+  const { liderId, ...bodyRest } = req.body;
+
+  // ADMIN/COORDINADOR pueden asignar la nueva persona a otro líder
+  if (liderId && (req.user.rol === 'ADMIN' || req.user.rol === 'COORDINADOR')) {
+    const liderEncontrado = await Usuario.findById(liderId).select('perfil email rol').lean();
+    if (!liderEncontrado) throw new ApiError(400, 'El líder seleccionado no existe');
+    usuarioLider = liderEncontrado;
+  }
+
+  const persona = await personaService.crearPersona(bodyRest, usuarioLider, req.campanaId);
 
   res.status(201).json({
     success: true,
