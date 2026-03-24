@@ -173,6 +173,40 @@ class PersonaService {
   }
 
   /**
+   * Mover o compartir persona a otra campaña
+   * accion: 'MOVER' | 'COMPARTIR'
+   */
+  async cambiarCampana(id, campanaDestino, accion, usuarioId, rol) {
+    const persona = await Persona.findById(id);
+    if (!persona) throw new ApiError(404, 'Persona no encontrada');
+
+    // LIDER solo puede operar sobre sus propias personas
+    if (rol === 'LIDER' && persona.lider?.id?.toString() !== usuarioId.toString()) {
+      throw new ApiError(403, 'No tienes permiso para modificar esta persona');
+    }
+
+    const destId = campanaDestino.toString();
+
+    if (accion === 'MOVER') {
+      // Quitar de campanas[] si estaba, cambiar campaña principal
+      persona.campanas = (persona.campanas || []).filter(c => c.toString() !== destId);
+      persona.campana = campanaDestino;
+    } else if (accion === 'COMPARTIR') {
+      // Agregar a campanas[] si no está ya (ni es la principal)
+      const yaEnPrincipal = persona.campana?.toString() === destId;
+      const yaEnAliadas = (persona.campanas || []).some(c => c.toString() === destId);
+      if (!yaEnPrincipal && !yaEnAliadas) {
+        persona.campanas = [...(persona.campanas || []), campanaDestino];
+      }
+    } else {
+      throw new ApiError(400, 'Acción debe ser MOVER o COMPARTIR');
+    }
+
+    await persona.save();
+    return persona;
+  }
+
+  /**
    * Eliminar persona (solo ADMIN)
    */
   async eliminarPersona(id) {
