@@ -12,6 +12,7 @@ exports.listarUsuarios = asyncHandler(async (req, res) => {
   // ADMIN ve TODOS los usuarios sin excepción (sin filtro de campaña)
   // COORDINADOR ve solo los de su campaña
   const campanaFilter = req.user.rol === 'ADMIN' ? {} : req.campanaFilter;
+  const coordinadorId = req.user.rol === 'COORDINADOR' ? req.user._id : null;
 
   const resultado = await usuarioService.listarUsuarios({
     page,
@@ -19,7 +20,8 @@ exports.listarUsuarios = asyncHandler(async (req, res) => {
     search,
     rol,
     estado,
-    campanaFilter
+    campanaFilter,
+    coordinadorId
   });
 
   res.json({
@@ -51,7 +53,8 @@ exports.crearUsuario = asyncHandler(async (req, res) => {
   const usuario = await usuarioService.crearUsuario(
     req.body,
     req.user.rol,
-    req.campanaId
+    req.campanaId,
+    req.user._id
   );
 
   res.status(201).json({
@@ -67,7 +70,7 @@ exports.crearUsuario = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.actualizarUsuario = asyncHandler(async (req, res) => {
-  const usuario = await usuarioService.actualizarUsuario(req.params.id, req.body);
+  const usuario = await usuarioService.actualizarUsuario(req.params.id, req.body, req.user.rol, req.user._id);
 
   res.json({
     success: true,
@@ -82,7 +85,7 @@ exports.actualizarUsuario = asyncHandler(async (req, res) => {
  * @access  Private (Admin only)
  */
 exports.eliminarUsuario = asyncHandler(async (req, res) => {
-  const resultado = await usuarioService.eliminarUsuario(req.params.id);
+  const resultado = await usuarioService.eliminarUsuario(req.params.id, req.user.rol, req.user._id);
 
   res.json({
     success: true,

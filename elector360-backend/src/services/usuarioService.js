@@ -7,9 +7,14 @@ class UsuarioService {
    * Listar usuarios
    */
   async listarUsuarios(opciones = {}) {
-    const { page = 1, limit = 50, search, rol, estado, campanaFilter } = opciones;
+    const { page = 1, limit = 50, search, rol, estado, campanaFilter, coordinadorId } = opciones;
 
     const query = { ...campanaFilter };
+
+    // COORDINADOR solo ve sus propios LIDERs
+    if (coordinadorId) {
+      query.coordinadorId = coordinadorId;
+    }
 
     if (search) {
       query.$or = [
@@ -60,7 +65,7 @@ class UsuarioService {
   /**
    * Crear usuario
    */
-  async crearUsuario(datosUsuario, creadorRol = 'ADMIN', creadorCampanaId = null) {
+  async crearUsuario(datosUsuario, creadorRol = 'ADMIN', creadorCampanaId = null, creadorId = null) {
     // COORDINADOR solo puede crear LIDER y fuerza su campaña
     if (creadorRol === 'COORDINADOR') {
       if (datosUsuario.rol && datosUsuario.rol !== 'LIDER') {
@@ -68,6 +73,7 @@ class UsuarioService {
       }
       datosUsuario.rol = 'LIDER';
       datosUsuario.campana = creadorCampanaId;
+      datosUsuario.coordinadorId = creadorId;
     }
 
     // Verificar si el email ya existe
@@ -88,11 +94,18 @@ class UsuarioService {
   /**
    * Actualizar usuario
    */
-  async actualizarUsuario(id, datosActualizacion) {
+  async actualizarUsuario(id, datosActualizacion, solicitanteRol = 'ADMIN', solicitanteId = null) {
     const usuario = await Usuario.findById(id);
 
     if (!usuario) {
       throw new ApiError(404, 'Usuario no encontrado');
+    }
+
+    // COORDINADOR solo puede editar sus propios LIDERs
+    if (solicitanteRol === 'COORDINADOR') {
+      if (!usuario.coordinadorId || usuario.coordinadorId.toString() !== solicitanteId?.toString()) {
+        throw new ApiError(403, 'No tienes permiso para modificar este usuario');
+      }
     }
 
     // Campos que se pueden actualizar
@@ -147,11 +160,18 @@ class UsuarioService {
   /**
    * Eliminar usuario
    */
-  async eliminarUsuario(id) {
+  async eliminarUsuario(id, solicitanteRol = 'ADMIN', solicitanteId = null) {
     const usuario = await Usuario.findById(id);
 
     if (!usuario) {
       throw new ApiError(404, 'Usuario no encontrado');
+    }
+
+    // COORDINADOR solo puede eliminar sus propios LIDERs
+    if (solicitanteRol === 'COORDINADOR') {
+      if (!usuario.coordinadorId || usuario.coordinadorId.toString() !== solicitanteId?.toString()) {
+        throw new ApiError(403, 'No tienes permiso para eliminar este usuario');
+      }
     }
 
     // Verificar que no sea el último admin

@@ -32,6 +32,12 @@ const usuarioSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Campana'
   }],
+  // Coordinador que creó/gestiona este LIDER
+  coordinadorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Usuario',
+    default: null
+  },
   perfil: {
     nombres: {
       type: String,
