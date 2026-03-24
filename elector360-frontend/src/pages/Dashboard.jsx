@@ -83,11 +83,13 @@ function Dashboard() {
           </h1>
           <p className="text-gray-500 mt-1">
             Bienvenido, {user?.perfil?.nombres}
-            {user?.campana?.nombre && (
-              <span className="ml-2 text-sm text-teal-600 font-medium">
-                | {user.campana.nombre}
-              </span>
-            )}
+            {(() => {
+              const nombreActiva = misCampanas.find(c => String(c._id) === campanaActiva)?.nombre;
+              const nombre = nombreActiva || user?.campana?.nombre;
+              return nombre ? (
+                <span className="ml-2 text-sm text-teal-600 font-medium">| {nombre}</span>
+              ) : null;
+            })()}
           </p>
         </div>
 

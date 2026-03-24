@@ -102,15 +102,19 @@ class CampanaService {
     return { message: 'Campaña finalizada exitosamente' };
   }
 
-  async listarPorIds(ids) {
+  async listarPorIds(ids, liderId = null) {
     const campanas = await Campana.find({ _id: { $in: ids } }).lean();
     return Promise.all(
       campanas.map(async (c) => {
-        // Filtro que incluye personas aliadas (campanas[] array)
-        const filtroPersonas = { $or: [{ campana: c._id }, { campanas: c._id }] };
+        // Si es LIDER, mostrar solo sus personas en esa campaña
+        const filtroPersonas = liderId
+          ? { campana: c._id, 'lider.id': liderId }
+          : { campana: c._id };
         const [totalPersonas, lideres, confirmadas] = await Promise.all([
           Persona.countDocuments(filtroPersonas),
-          Usuario.countDocuments({ campana: c._id, rol: 'LIDER' }),
+          liderId
+            ? Promise.resolve(1)
+            : Usuario.countDocuments({ campana: c._id, rol: 'LIDER' }),
           Persona.countDocuments({ ...filtroPersonas, estadoContacto: 'CONFIRMADO' })
         ]);
         return { ...c, totalPersonas, lideres, confirmadas };

@@ -107,15 +107,6 @@ function Personas() {
   // Nueva persona: líder a asignar (ADMIN/COORDINADOR)
   const [liderParaCrear, setLiderParaCrear] = useState('');
 
-  // Modal "Mover/Compartir campaña"
-  const [showCampanaModal, setShowCampanaModal] = useState(false);
-  const [personaCampana, setPersonaCampana] = useState(null);
-  const [campanasList, setCampanasList] = useState([]);
-  const [campanaDestino, setCampanaDestino] = useState('');
-  const [accionCampana, setAccionCampana] = useState('COMPARTIR');
-  const [guardandoCampana, setGuardandoCampana] = useState(false);
-  const [errorCampana, setErrorCampana] = useState(null);
-
   // Modal de importación
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -644,26 +635,6 @@ function Personas() {
           </button>
         </>
       )}
-      {/* Mover/Compartir campaña */}
-      <>
-        <div className="border-t border-gray-100 my-1"></div>
-        <button
-          onClick={async () => {
-            setPersonaCampana(persona);
-            setCampanaDestino('');
-            setAccionCampana('COMPARTIR');
-            setErrorCampana(null);
-            setMenuAbierto(null);
-            const res = await campanaService.misCampanas();
-            setCampanasList(res.success ? (res.data || []) : []);
-            setShowCampanaModal(true);
-          }}
-          className="w-full text-left px-4 py-2.5 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-          Mover / Compartir campaña
-        </button>
-      </>
       {/* Reasignar Líder: solo COORDINADOR y ADMIN */}
       {(esAdmin || esCoordi) && (
         <>
@@ -1909,88 +1880,6 @@ function Personas() {
                 {reasignando ? (
                   <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Reasignando...</>
                 ) : 'Confirmar Reasignación'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Modal Mover / Compartir campaña */}
-      {showCampanaModal && personaCampana && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-bold text-gray-900">Mover / Compartir campaña</h2>
-              <button onClick={() => setShowCampanaModal(false)} className="text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-sm text-gray-600">
-                Persona: <span className="font-semibold text-gray-900">{personaCampana.nombres} {personaCampana.apellidos}</span>
-              </p>
-
-              {/* Acción */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setAccionCampana('COMPARTIR')}
-                  className={`p-3 rounded-xl border-2 text-left transition-all ${accionCampana === 'COMPARTIR' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}
-                >
-                  <p className="font-semibold text-sm text-gray-900">Compartir</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Aparece en las dos campañas</p>
-                </button>
-                <button
-                  onClick={() => setAccionCampana('MOVER')}
-                  className={`p-3 rounded-xl border-2 text-left transition-all ${accionCampana === 'MOVER' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-300'}`}
-                >
-                  <p className="font-semibold text-sm text-gray-900">Mover</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Solo en la nueva campaña</p>
-                </button>
-              </div>
-
-              {/* Campaña destino */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Campaña destino</label>
-                <select
-                  value={campanaDestino}
-                  onChange={e => setCampanaDestino(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
-                >
-                  <option value="">Seleccionar campaña...</option>
-                  {campanasList.map(c => (
-                    <option key={c._id} value={c._id}>{c.nombre} ({c.tipo})</option>
-                  ))}
-                </select>
-              </div>
-
-              {errorCampana && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{errorCampana}</p>
-              )}
-            </div>
-            <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex gap-3">
-              <button onClick={() => setShowCampanaModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-medium">Cancelar</button>
-              <button
-                disabled={guardandoCampana || !campanaDestino}
-                onClick={async () => {
-                  if (!campanaDestino) return;
-                  setGuardandoCampana(true);
-                  setErrorCampana(null);
-                  try {
-                    const res = await import('../services/api').then(m => m.default.put(`/personas/${personaCampana._id}/campana`, { campanaId: campanaDestino, accion: accionCampana }));
-                    if (res.data.success) {
-                      setShowCampanaModal(false);
-                      addToast({ type: 'success', message: accionCampana === 'MOVER' ? 'Persona movida a la nueva campaña' : 'Persona compartida con la campaña' });
-                      cargarPersonas();
-                    } else {
-                      setErrorCampana(res.data.error || 'Error al procesar');
-                    }
-                  } catch (e) {
-                    setErrorCampana(e.response?.data?.error || 'Error al procesar');
-                  }
-                  setGuardandoCampana(false);
-                }}
-                className={`flex-1 px-4 py-2 text-white rounded-lg font-medium disabled:opacity-50 transition-colors ${accionCampana === 'MOVER' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-              >
-                {guardandoCampana ? 'Procesando...' : accionCampana === 'MOVER' ? 'Mover persona' : 'Compartir persona'}
               </button>
             </div>
           </div>

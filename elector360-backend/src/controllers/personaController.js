@@ -189,30 +189,6 @@ exports.asignarLider = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Mover o compartir persona a otra campaña
- * @route   PUT /api/v1/personas/:id/campana
- * @access  Private (Lider+)
- */
-exports.cambiarCampana = asyncHandler(async (req, res) => {
-  const { campanaId, accion } = req.body; // accion: 'MOVER' | 'COMPARTIR'
-
-  if (!campanaId || !accion) {
-    throw new ApiError(400, 'Se requieren campanaId y accion (MOVER o COMPARTIR)');
-  }
-
-  const persona = await personaService.cambiarCampana(
-    req.params.id,
-    campanaId,
-    accion,
-    req.user._id,
-    req.user.rol
-  );
-
-  const msg = accion === 'MOVER' ? 'Persona movida a la nueva campaña' : 'Persona compartida con la campaña';
-  res.json({ success: true, message: msg, data: persona });
-});
-
-/**
  * @desc    Eliminar persona
  * @route   DELETE /api/v1/personas/:id
  * @access  Private (Admin only)

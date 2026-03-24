@@ -5,11 +5,6 @@ const ExcelJS = require('exceljs');
 const fs = require('fs');
 const mongoose = require('mongoose');
 
-// Filtro que incluye personas de campana principal Y campanas aliadas (campanas[])
-const filtroCampana = (campanaId) => ({
-  $or: [{ campana: campanaId }, { campanas: campanaId }]
-});
-
 /**
  * Genera variantes de un valor numérico con distintos ceros iniciales.
  * Ej: "005" → ["005","5","05"], "00" → ["00","0"]
@@ -212,7 +207,7 @@ const obtenerAnalisis = async (campanaId, filtros = {}) => {
 
   // Una sola query para obtener todos los puestos de personas
   const personas = await Persona.find(
-    filtroCampana(campanaId),
+    { campana: campanaId },
     { 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1, estadoContacto: 1 }
   ).lean();
 
@@ -275,7 +270,7 @@ const obtenerAnalisis = async (campanaId, filtros = {}) => {
 const obtenerResumen = async (campanaId) => {
   const [resultados, personas] = await Promise.all([
     ResultadoMesa.find({ campana: campanaId }).lean(),
-    Persona.find(filtroCampana(campanaId), { 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1 }).lean()
+    Persona.find({ campana: campanaId }, { 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1 }).lean()
   ]);
 
   if (resultados.length === 0) {
@@ -571,11 +566,11 @@ const verificarVotosMesas = async (campanaId) => {
 
   const [resultados, todasPersonas] = await Promise.all([
     ResultadoMesa.find({ campana: campanaId }).lean(),
-    Persona.find(filtroCampana(campanaId), { _id: 1, 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1 }).lean()
+    Persona.find({ campana: campanaId }, { _id: 1, 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1 }).lean()
   ]);
 
   // Resetear todas las personas a NO_CUMPLIDO (sin E-14 = no cumplido)
-  await Persona.updateMany(filtroCampana(campanaId), { $set: { estadoVoto: 'NO_CUMPLIDO', notaVoto: 'No hay votos' } });
+  await Persona.updateMany({ campana: campanaId }, { $set: { estadoVoto: 'NO_CUMPLIDO', notaVoto: 'No hay votos' } });
 
   if (resultados.length === 0) {
     return { totalMesas: 0, mesasConPersonas: 0, personasActualizadas: 0, resumen: { cumplido: 0, verificable: 0, noCumplido: 0, sinDatos: 0 } };
@@ -692,11 +687,11 @@ const obtenerMisPersonas = async (campanaId, liderId) => {
 
   const [resultados, todasPersonas, misPersonas] = await Promise.all([
     ResultadoMesa.find({ campana: campanaId }).lean(),
-    Persona.find(filtroCampana(campanaId), {
+    Persona.find({ campana: campanaId }, {
       'puesto.departamento': 1, 'puesto.municipio': 1,
       'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1
     }).lean(),
-    Persona.find({ ...filtroCampana(campanaId), 'lider.id': liderId })
+    Persona.find({ campana: campanaId, 'lider.id': liderId })
       .select('nombres apellidos documento telefono estadoContacto puesto estadoVoto')
       .sort({ apellidos: 1, nombres: 1 })
       .lean()
@@ -772,7 +767,7 @@ const obtenerMisPersonas = async (campanaId, liderId) => {
 const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas') => {
   if (!campanaId) throw new ApiError(400, 'No hay campaña activa');
 
-  const personasQuery = { ...filtroCampana(campanaId) };
+  const personasQuery = { campana: campanaId };
   if (liderFiltro) personasQuery['lider.id'] = liderFiltro;
 
   const [resultados, personas] = await Promise.all([
@@ -931,7 +926,7 @@ const obtenerInformeLider = async (campanaId, liderId) => {
 
   // 1. Personas del líder
   const personasLider = await Persona.find(
-    { ...filtroCampana(campanaId), 'lider.id': liderId },
+    { campana: campanaId, 'lider.id': liderId },
     { nombres: 1, apellidos: 1, documento: 1, telefono: 1, estadoContacto: 1, estadoVoto: 1, puesto: 1 }
   ).lean();
 
@@ -989,7 +984,7 @@ const obtenerInformeLider = async (campanaId, liderId) => {
 
   // 4. Todas las personas de la campaña para encontrar otros líderes en las mismas mesas
   const todasPersonas = await Persona.find(
-    filtroCampana(campanaId),
+    { campana: campanaId },
     { nombres: 1, apellidos: 1, documento: 1, estadoVoto: 1, 'puesto.departamento': 1, 'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1, 'puesto.mesa': 1, 'lider.id': 1, 'lider.nombre': 1 }
   ).lean();
 
@@ -1075,7 +1070,7 @@ const verificarPuestosVotacion = async (campanaId) => {
     ResultadoMesa.find({ campana: campanaId }, {
       municipio: 1, zona: 1, nombrePuesto: 1
     }).lean(),
-    Persona.find(filtroCampana(campanaId), {
+    Persona.find({ campana: campanaId }, {
       'puesto.municipio': 1, 'puesto.zona': 1, 'puesto.nombrePuesto': 1
     }).lean()
   ]);

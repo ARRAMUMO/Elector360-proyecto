@@ -118,7 +118,8 @@ exports.getMisCampanas = asyncHandler(async (req, res) => {
     return res.json({ success: true, data: [] });
   }
 
-  const campanasConStats = await campanaService.listarPorIds(campanaIds);
+  const liderId = req.user.rol === 'LIDER' ? req.user._id : null;
+  const campanasConStats = await campanaService.listarPorIds(campanaIds, liderId);
   res.json({ success: true, data: campanasConStats });
 });
 

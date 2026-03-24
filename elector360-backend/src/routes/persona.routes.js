@@ -38,9 +38,6 @@ router.get('/documento/:documento', personaController.obtenerPorDocumento);
 // Asignar/reasignar líder (Coordinador/Admin)
 router.put('/:id/asignar-lider', requireCoordinador, personaController.asignarLider);
 
-// Mover o compartir persona a otra campaña
-router.put('/:id/campana', requireLider, personaController.cambiarCampana);
-
 // Por ID
 router.route('/:id')
   .get(personaController.obtenerPersona)
