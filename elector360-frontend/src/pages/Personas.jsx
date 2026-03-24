@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import personaService from '../services/personaService';
 import authService from '../services/authService';
 import campanaService from '../services/campanaService';
+import api from '../services/api';
 import useDebounce from '../hooks/useDebounce';
 import Alert from '../components/common/Alert';
 import Spinner from '../components/common/Spinner';
@@ -118,6 +119,15 @@ function Personas() {
   const [importLideres, setImportLideres] = useState([]);
   const [importCampanas, setImportCampanas] = useState([]);
   const [loadingImportData, setLoadingImportData] = useState(false);
+
+  // Modal "Mover / Compartir campaña"
+  const [showCampanaModal, setShowCampanaModal] = useState(false);
+  const [personaCampana, setPersonaCampana] = useState(null);
+  const [campanasList, setCampanasList] = useState([]);
+  const [campanaDestino, setCampanaDestino] = useState('');
+  const [accionCampana, setAccionCampana] = useState('COMPARTIR');
+  const [guardandoCampana, setGuardandoCampana] = useState(false);
+  const [errorCampana, setErrorCampana] = useState('');
 
   // Debounce del search
   const debouncedSearch = useDebounce(search, 500);
@@ -648,6 +658,26 @@ function Personas() {
           </button>
         </>
       )}
+      <>
+        <div className="border-t border-gray-100 my-1"></div>
+        <button
+          onClick={async () => {
+            setPersonaCampana(persona);
+            setAccionCampana('COMPARTIR');
+            setCampanaDestino('');
+            setErrorCampana('');
+            const res = await campanaService.misCampanas();
+            setCampanasList(res.success ? res.data : []);
+            setShowCampanaModal(true);
+          }}
+          className="flex items-center gap-2 w-full px-4 py-2 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          Mover / Compartir campaña
+        </button>
+      </>
       {(esAdmin || esCoordi) && (
         <>
           <div className="border-t border-gray-100 my-1"></div>
@@ -1880,6 +1910,94 @@ function Personas() {
                 {reasignando ? (
                   <><svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Reasignando...</>
                 ) : 'Confirmar Reasignación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Mover / Compartir campaña */}
+      {showCampanaModal && personaCampana && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">Mover / Compartir campaña</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              <span className="font-medium text-gray-700">{personaCampana.nombres} {personaCampana.apellidos}</span>
+            </p>
+
+            {/* Selector de acción */}
+            <div className="flex gap-3 mb-4">
+              {[
+                { value: 'COMPARTIR', label: 'Compartir', desc: 'Visible en ambas campañas' },
+                { value: 'MOVER', label: 'Mover', desc: 'Cambia campaña principal' }
+              ].map(op => (
+                <button
+                  key={op.value}
+                  onClick={() => setAccionCampana(op.value)}
+                  className={`flex-1 rounded-xl border-2 p-3 text-left transition-all ${
+                    accionCampana === op.value
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-gray-200 hover:border-indigo-300'
+                  }`}
+                >
+                  <p className={`font-semibold text-sm ${accionCampana === op.value ? 'text-indigo-700' : 'text-gray-700'}`}>{op.label}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{op.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {/* Selector campaña destino */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Campaña destino</label>
+              <select
+                value={campanaDestino}
+                onChange={e => setCampanaDestino(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="">Selecciona una campaña...</option>
+                {campanasList
+                  .filter(c => String(c._id) !== String(personaCampana.campana?._id || personaCampana.campana))
+                  .map(c => (
+                    <option key={c._id} value={c._id}>{c.nombre}</option>
+                  ))}
+              </select>
+            </div>
+
+            {errorCampana && <p className="text-sm text-red-600 mb-3">{errorCampana}</p>}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowCampanaModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                disabled={!campanaDestino || guardandoCampana}
+                onClick={async () => {
+                  if (!campanaDestino) return;
+                  setGuardandoCampana(true);
+                  setErrorCampana('');
+                  try {
+                    const res = await api.put(`/personas/${personaCampana._id}/campana`, {
+                      campanaId: campanaDestino,
+                      accion: accionCampana
+                    });
+                    if (res.data?.success) {
+                      setShowCampanaModal(false);
+                      cargarPersonas();
+                    } else {
+                      setErrorCampana(res.data?.message || 'Error al procesar');
+                    }
+                  } catch (err) {
+                    setErrorCampana(err.response?.data?.message || 'Error al procesar');
+                  } finally {
+                    setGuardandoCampana(false);
+                  }
+                }}
+                className="px-5 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {guardandoCampana ? 'Procesando...' : (accionCampana === 'MOVER' ? 'Mover' : 'Compartir')}
               </button>
             </div>
           </div>

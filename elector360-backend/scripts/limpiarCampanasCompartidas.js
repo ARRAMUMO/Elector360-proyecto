@@ -12,7 +12,6 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Persona = require('../src/models/Persona');
-const Usuario = require('../src/models/Usuario');
 
 async function limpiar() {
   console.log('============================================');
@@ -37,25 +36,9 @@ async function limpiar() {
     );
     console.log(`  ${resPersonas.modifiedCount} personas limpiadas\n`);
 
-    // 2. En cada LIDER, dejar campanas[] con solo su campana principal
-    console.log('[2/2] Limpiando Usuario.campanas[] (dejar solo campana principal)...');
-    const lideres = await Usuario.find({ rol: 'LIDER', campana: { $ne: null } }).select('_id campana campanas').lean();
-
-    let actualizados = 0;
-    for (const lider of lideres) {
-      const campanaPrincipalId = lider.campana?.toString();
-      const campanas = (lider.campanas || []).map(c => c.toString());
-
-      // Si tiene más de una campaña o campanas[] no coincide con la principal
-      const necesitaLimpiar = campanas.length !== 1 || campanas[0] !== campanaPrincipalId;
-      if (necesitaLimpiar) {
-        await Usuario.findByIdAndUpdate(lider._id, {
-          $set: { campanas: lider.campana ? [lider.campana] : [] }
-        });
-        actualizados++;
-      }
-    }
-    console.log(`  ${actualizados} líderes actualizados\n`);
+    // 2. No se toca Usuario.campanas[] — esas asignaciones son legítimas
+    //    (el coordinador asigna LIDERs a múltiples campañas desde Usuarios.jsx)
+    console.log('[2/2] Usuario.campanas[] no se modifica (asignaciones del coordinador).\n');
 
     console.log('============================================');
     console.log('  LIMPIEZA COMPLETADA');

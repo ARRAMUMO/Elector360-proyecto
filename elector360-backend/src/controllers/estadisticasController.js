@@ -15,14 +15,15 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
   const esAdmin = usuario.rol === 'ADMIN';
   const esCoordinador = usuario.rol === 'COORDINADOR';
 
-  // Estadísticas base con scope de campaña
+  // Estadísticas base — usar campanaFilterPersonas ($or campana/campanas[]) para incluir personas compartidas
+  const campanaFiltro = req.campanaFilterPersonas || req.campanaFilter;
   let filtro;
   if (esAdmin) {
-    filtro = { ...req.campanaFilter };
+    filtro = { ...campanaFiltro };
   } else if (esCoordinador) {
-    filtro = { ...req.campanaFilter };
+    filtro = { ...campanaFiltro };
   } else {
-    filtro = { 'lider.id': usuario._id, confirmado: true, ...req.campanaFilter };
+    filtro = { 'lider.id': usuario._id, confirmado: true, ...campanaFiltro };
   }
 
   const [
