@@ -177,6 +177,7 @@ class PersonaService {
    * accion: 'MOVER' | 'COMPARTIR'
    */
   async cambiarCampana(id, campanaDestino, accion, usuarioId, rol) {
+    const Usuario = require('../models/Usuario');
     const persona = await Persona.findById(id);
     if (!persona) throw new ApiError(404, 'Persona no encontrada');
 
@@ -186,17 +187,31 @@ class PersonaService {
     }
 
     const destId = campanaDestino.toString();
+    const liderId = persona.lider?.id;
 
     if (accion === 'MOVER') {
       // Quitar de campanas[] si estaba, cambiar campaña principal
       persona.campanas = (persona.campanas || []).filter(c => c.toString() !== destId);
       persona.campana = campanaDestino;
+      // Actualizar campana principal del LIDER también
+      if (liderId) {
+        await Usuario.findByIdAndUpdate(liderId, {
+          $set: { campana: campanaDestino },
+          $addToSet: { campanas: campanaDestino }
+        });
+      }
     } else if (accion === 'COMPARTIR') {
       // Agregar a campanas[] si no está ya (ni es la principal)
       const yaEnPrincipal = persona.campana?.toString() === destId;
       const yaEnAliadas = (persona.campanas || []).some(c => c.toString() === destId);
       if (!yaEnPrincipal && !yaEnAliadas) {
         persona.campanas = [...(persona.campanas || []), campanaDestino];
+      }
+      // Agregar campaña destino a las campañas accesibles del LIDER
+      if (liderId) {
+        await Usuario.findByIdAndUpdate(liderId, {
+          $addToSet: { campanas: campanaDestino }
+        });
       }
     } else {
       throw new ApiError(400, 'Acción debe ser MOVER o COMPARTIR');
