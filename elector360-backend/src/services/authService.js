@@ -25,8 +25,8 @@ class AuthService {
    * Login de usuario
    */
   async login(email, password) {
-    // Buscar usuario (incluir password)
-    const usuario = await Usuario.findOne({ email }).select('+password');
+    // Buscar usuario (incluir password, poblar campaña para tener nombre en frontend)
+    const usuario = await Usuario.findOne({ email }).select('+password').populate('campana', 'nombre estado tipo');
 
     if (!usuario) {
       throw new ApiError(401, 'Credenciales inválidas');

@@ -123,6 +123,19 @@ const personaSchema = new mongoose.Schema({
     default: false
   },
 
+  // Persistencia: persona archivada cuando su líder/campaña es eliminado
+  // Los datos personales se conservan. archivado=true → oculta de vistas normales
+  archivado: {
+    type: Boolean,
+    default: false
+  },
+  motivoArchivo: {
+    type: String,
+    enum: ['LIDER_ELIMINADO', 'CAMPAÑA_ELIMINADA', 'MANUAL'],
+    default: null
+  },
+  fechaArchivo: Date,
+
   // Índice de búsqueda
   searchIndex: String
 }, {
@@ -140,6 +153,16 @@ personaSchema.index({ estadoContacto: 1 });
 personaSchema.index({ confirmado: 1 });
 personaSchema.index({ estadoVoto: 1 });
 personaSchema.index({ searchIndex: 'text' });
+
+// Excluir automáticamente personas archivadas en todos los find/findOne/count/aggregate
+// Para ver archivadas explícitamente, usar: Persona.find({ archivado: true })
+personaSchema.pre(/^find/, function(next) {
+  // Solo aplicar si no se está consultando archivadas explícitamente
+  if (this.getQuery().archivado === undefined) {
+    this.where({ archivado: { $ne: true } });
+  }
+  next();
+});
 
 // Crear índice de búsqueda antes de guardar
 personaSchema.pre('save', function(next) {

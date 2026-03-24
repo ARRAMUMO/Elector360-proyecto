@@ -21,8 +21,8 @@ class PersonaService {
       campanaFilter
     } = { ...filtros, ...opciones };
 
-    // Construir query con scope de campaña
-    const query = { ...campanaFilter };
+    // Construir query con scope de campaña (excluir archivadas)
+    const query = { ...campanaFilter, archivado: { $ne: true } };
 
     // Filtro por líder (si es LIDER, solo ve sus personas)
     if (liderId) {
@@ -206,7 +206,7 @@ class PersonaService {
   async obtenerMesasVotacion(filtros = {}) {
     const { liderId, departamento, municipio, nombrePuesto, campanaFilter } = filtros;
 
-    const matchStage = { ...campanaFilter, 'puesto.mesa': { $exists: true, $ne: null, $ne: '' } };
+    const matchStage = { ...campanaFilter, archivado: { $ne: true }, 'puesto.mesa': { $exists: true, $ne: '' } };
 
     if (liderId) {
       matchStage['lider.id'] = liderId;
@@ -265,7 +265,7 @@ class PersonaService {
   async obtenerPersonasPorMesa(datosMesa, liderId = null, campanaFilter = {}) {
     const { departamento, municipio, nombrePuesto, mesa } = datosMesa;
 
-    const query = { ...campanaFilter };
+    const query = { ...campanaFilter, archivado: { $ne: true } };
 
     if (departamento) query['puesto.departamento'] = new RegExp(departamento, 'i');
     if (municipio) query['puesto.municipio'] = new RegExp(municipio, 'i');

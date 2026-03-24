@@ -182,8 +182,17 @@ class UsuarioService {
       }
     }
 
-    // Eliminar o reasignar personas
-    await Persona.deleteMany({ 'lider.id': id });
+    // Archivar personas del líder (NO eliminar — datos personales persisten)
+    await Persona.updateMany(
+      { 'lider.id': id, archivado: { $ne: true } },
+      {
+        $set: {
+          archivado: true,
+          motivoArchivo: 'LIDER_ELIMINADO',
+          fechaArchivo: new Date()
+        }
+      }
+    );
 
     await usuario.deleteOne();
 

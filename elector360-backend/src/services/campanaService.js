@@ -87,6 +87,18 @@ class CampanaService {
     campana.estado = 'FINALIZADA';
     await campana.save();
 
+    // Archivar personas de la campaña (datos persisten, solo se ocultan)
+    await Persona.updateMany(
+      { campana: id, archivado: { $ne: true } },
+      {
+        $set: {
+          archivado: true,
+          motivoArchivo: 'CAMPAÑA_ELIMINADA',
+          fechaArchivo: new Date()
+        }
+      }
+    );
+
     return { message: 'Campaña finalizada exitosamente' };
   }
 

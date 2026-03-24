@@ -108,7 +108,7 @@ exports.getMisCampanas = asyncHandler(async (req, res) => {
     return res.json({ success: true, data: campanas });
   }
 
-  // COORDINADOR: recopilar IDs únicos
+  // COORDINADOR / LIDER: recopilar IDs únicos de campana + campanas[]
   const idsSet = new Set();
   if (req.user.campana) idsSet.add(String(req.user.campana._id || req.user.campana));
   (req.user.campanas || []).forEach(c => idsSet.add(String(c._id || c)));

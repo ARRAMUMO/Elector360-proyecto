@@ -10,6 +10,7 @@ function Dashboard() {
   const user = authService.getStoredUser();
   const esCoordi = user?.rol === 'COORDINADOR';
   const esAdmin = user?.rol === 'ADMIN';
+  const esLider = user?.rol === 'LIDER';
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,7 +18,7 @@ function Dashboard() {
   const [campanaActiva, setCampanaActivaState] = useState(() => authService.getCampanaActiva());
 
   useEffect(() => {
-    if (esCoordi || esAdmin) {
+    if (esCoordi || esAdmin || esLider) {
       cargarMisCampanas().then(() => cargarStats());
     } else {
       cargarStats();
@@ -92,8 +93,8 @@ function Dashboard() {
 
       </div>
 
-      {/* Selección de campaña — solo COORDINADOR */}
-      {esCoordi && misCampanas.length > 0 && (
+      {/* Selección de campaña — COORDINADOR y LIDER */}
+      {(esCoordi || esLider) && misCampanas.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
             <span className="text-lg">🏛️</span>

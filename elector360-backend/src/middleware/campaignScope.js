@@ -60,7 +60,30 @@ exports.resolveCampaign = (req, res, next) => {
       throw new ApiError(403, 'Coordinador no asignado a ninguna campaña. Contacta al administrador.');
     }
   } else {
-    if (!req.user.campana) {
+    // LIDER — puede tener múltiples campañas igual que COORDINADOR
+    const campanaHeader = req.headers['x-campana-id'];
+    const campanas = req.user.campanas || [];
+
+    if (campanaHeader && campanas.length > 0) {
+      const campanaIds = campanas.map(c => String(c._id || c));
+      const campanaPrincipal = String(req.user.campana?._id || req.user.campana || '');
+      const campanaValida = campanaIds.includes(campanaHeader) || campanaPrincipal === campanaHeader;
+
+      if (campanaValida) {
+        req.campanaId = campanaHeader;
+        req.campanaFilter = { campana: campanaHeader };
+        req.campanaFilterPersonas = buildCampanaFilter(campanaHeader);
+      } else if (req.user.campana) {
+        const campanaId = req.user.campana._id || req.user.campana;
+        req.campanaId = campanaId;
+        req.campanaFilter = { campana: campanaId };
+        req.campanaFilterPersonas = buildCampanaFilter(campanaId);
+      } else {
+        req.campanaId = null;
+        req.campanaFilter = {};
+        req.campanaFilterPersonas = {};
+      }
+    } else if (!req.user.campana) {
       req.campanaId = null;
       req.campanaFilter = {};
       req.campanaFilterPersonas = {};

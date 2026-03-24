@@ -9,7 +9,8 @@ router.use(protect);
 
 // Ruta para COORDINADOR (y ADMIN): ver sus propias campañas con stats
 // DEBE ir antes de requireAdmin para que los coordinadores puedan acceder
-router.get('/mis-campanas', requireCoordinador, campanaController.getMisCampanas);
+// Cualquier usuario autenticado puede ver sus campañas (LIDER, COORDINADOR, ADMIN)
+router.get('/mis-campanas', campanaController.getMisCampanas);
 
 
 // El resto de rutas requieren ser ADMIN

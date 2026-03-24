@@ -65,7 +65,9 @@ function Usuarios() {
 
   const cargarCampanas = async () => {
     try {
-      const response = await api.get('/campanas');
+      // ADMIN usa /campanas (todas), COORDINADOR usa /campanas/mis-campanas (las suyas)
+      const endpoint = esAdmin ? '/campanas' : '/campanas/mis-campanas';
+      const response = await api.get(endpoint);
       if (response.data.success) {
         const data = response.data.data?.campanas || response.data.data;
         setCampanas(Array.isArray(data) ? data : []);
@@ -76,7 +78,7 @@ function Usuarios() {
   };
 
   const abrirModal = (usuario = null) => {
-    if (esAdmin) cargarCampanas();
+    if (esAdmin || esCoordinador) cargarCampanas();
     if (usuario) {
       setEditingUser(usuario);
       const campanasIds = (usuario.campanas || []).map(c => String(c._id || c));
@@ -146,9 +148,11 @@ function Usuarios() {
       }
     };
 
-    // Incluir campaña(s) si se seleccionó (ADMIN asignando campaña)
-    if (esAdmin && formData.rol === 'COORDINADOR' && formData.campanas.length > 0) {
-      // COORDINADOR: enviar array completo de campañas
+    // Incluir campaña(s)
+    if ((esAdmin || esCoordinador) && formData.rol === 'COORDINADOR' && formData.campanas.length > 0) {
+      dataToSend.campanas = formData.campanas;
+      dataToSend.campana = formData.campana || formData.campanas[0];
+    } else if ((esAdmin || esCoordinador) && formData.rol === 'LIDER' && formData.campanas.length > 0) {
       dataToSend.campanas = formData.campanas;
       dataToSend.campana = formData.campana || formData.campanas[0];
     } else if (esAdmin && formData.campana) {
@@ -624,24 +628,74 @@ function Usuarios() {
                   </select>
                 </div>
 
-                {/* Selector de campaña para LIDER (dropdown simple) */}
+                {/* Selector multi-campaña para LIDER (checkboxes) */}
                 {(esAdmin || esCoordinador) && formData.rol === 'LIDER' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Campana
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Campanas asignadas
+                      <span className="ml-1 text-xs text-gray-400 font-normal">(puede estar en más de una)</span>
                     </label>
-                    <select
-                      value={formData.campana}
-                      onChange={(e) => setFormData({...formData, campana: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="">Seleccionar campana...</option>
-                      {campanas.map(c => (
-                        <option key={c._id} value={c._id}>
-                          {c.nombre} ({c.tipo})
-                        </option>
-                      ))}
-                    </select>
+                    {campanas.length === 0 ? (
+                      <p className="text-sm text-gray-400 italic">No hay campañas disponibles</p>
+                    ) : (
+                      <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                        {campanas.map(c => {
+                          const checked = formData.campanas.includes(String(c._id));
+                          const esPrincipal = formData.campana === String(c._id);
+                          return (
+                            <label
+                              key={c._id}
+                              className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                                checked ? 'bg-emerald-50 border border-emerald-200' : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const id = String(c._id);
+                                  let nuevasCampanas;
+                                  if (e.target.checked) {
+                                    nuevasCampanas = [...formData.campanas, id];
+                                  } else {
+                                    nuevasCampanas = formData.campanas.filter(x => x !== id);
+                                  }
+                                  const nuevaPrincipal = nuevasCampanas.includes(formData.campana)
+                                    ? formData.campana
+                                    : (nuevasCampanas[0] || '');
+                                  setFormData({ ...formData, campanas: nuevasCampanas, campana: nuevaPrincipal });
+                                }}
+                                className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-800 truncate">{c.nombre}</p>
+                                <p className="text-xs text-gray-400">{c.tipo} · {c.estado}</p>
+                              </div>
+                              {esPrincipal && checked && (
+                                <span className="text-xs text-emerald-600 font-semibold shrink-0">Principal</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {formData.campanas.length > 1 && (
+                      <div className="mt-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Campaña principal (activa por defecto al iniciar sesión)
+                        </label>
+                        <select
+                          value={formData.campana}
+                          onChange={(e) => setFormData({ ...formData, campana: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                        >
+                          {formData.campanas.map(id => {
+                            const camp = campanas.find(c => String(c._id) === id);
+                            return camp ? <option key={id} value={id}>{camp.nombre}</option> : null;
+                          })}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
 
