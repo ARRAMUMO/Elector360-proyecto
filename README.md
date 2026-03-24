@@ -15,6 +15,8 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Asignar lider al crear**: Admin y Coordinador pueden seleccionar a que lider asignar la nueva persona directamente desde el modal de creacion
 - **Filtrar por lider desde Usuarios**: el boton "Ver personas" en la tabla de usuarios navega a /personas con filtro por lider activo y banner informativo
 - **Modal con botones siempre visibles**: el modal de nueva persona usa layout flex con footer sticky, los botones Cancelar/Crear Persona son siempre accesibles sin importar el scroll
+- **Mover / Compartir entre campanas**: desde el menu de acciones de cada persona, el lider puede moverla a otra campana (cambia campana principal) o compartirla (aparece en ambas campanas simultaneamente)
+- **Persistencia de datos personales**: al eliminar un lider o finalizar una campana, las personas NO se borran; se archivan con motivo y fecha. Los datos persisten para reutilizarse en futuras campanas
 
 ### Consulta RPA (Automatizacion)
 - **Consulta individual** por cedula en la Registraduria Nacional (`https://wsp.registraduria.gov.co/censo/consultar`)
@@ -67,10 +69,11 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Autenticacion JWT** con refresh tokens
 - **Panel de administracion** de usuarios con busqueda por nombre o email
 - **ADMIN ve todos los usuarios** sin excepcion, independientemente de la campana activa
-- **Multi-campana para Coordinador**: un Coordinador puede ser asignado a multiples campanas; el formulario de usuario muestra checkboxes para seleccionarlas y un selector de campana principal
+- **Multi-campana para Coordinador y Lider**: tanto Coordinadores como Lideres pueden ser asignados a multiples campanas; formulario con checkboxes y selector de campana principal; el Dashboard muestra el selector de campana activa para ambos roles
+- **Gestion de lideres por coordinador**: cada Coordinador solo ve y gestiona sus propios Lideres (campo coordinadorId); al crear un Lider, queda vinculado automaticamente al Coordinador que lo creo
 - **Asignacion de lider a persona**: Admin y Coordinador pueden reasignar el lider de cualquier persona
 - **Ver personas de un lider**: boton directo en la tabla de usuarios para navegar a /personas filtrado por ese lider
-- **Selector de campana en formulario LIDER**: Coordinador puede asignar campana al crear o editar un usuario con rol LIDER
+- **Campanas del endpoint mis-campanas**: accesible para todos los roles autenticados (Lider, Coordinador, Admin)
 
 ## Arquitectura
 
@@ -248,6 +251,7 @@ npm run build
 | GET | `/api/v1/personas/export/csv` | Exportar CSV |
 | GET | `/api/v1/personas/export/excel` | Exportar Excel |
 | PUT | `/api/v1/personas/:id/asignar-lider` | Reasignar lider (Admin/Coordinador) |
+| PUT | `/api/v1/personas/:id/campana` | Mover o compartir persona a otra campana |
 
 ### Campanas
 
@@ -259,7 +263,7 @@ npm run build
 | PUT | `/api/v1/campanas/:id` | Actualizar campana | Admin |
 | DELETE | `/api/v1/campanas/:id` | Eliminar campana | Admin |
 | GET | `/api/v1/campanas/:id/estadisticas` | Estadisticas de campana | Admin |
-| GET | `/api/v1/campanas/mis-campanas` | Campanas del coordinador con stats | Coordinador, Admin |
+| GET | `/api/v1/campanas/mis-campanas` | Campanas del usuario con stats | Todos los roles |
 
 ### Operaciones Masivas (Admin)
 
@@ -341,6 +345,8 @@ npm run build
 - Exportacion de datos (Excel/CSV)
 - Modulo E-14: vista de sus personas con estado de voto, descarga de informe propio
 - Importacion de resultados E-14 desde Excel o PDFs
+- Mover o compartir personas entre sus campanas asignadas
+- Puede pertenecer a multiples campanas y cambiar la campana activa desde el Dashboard
 
 ## Flujo de Consulta RPA
 
