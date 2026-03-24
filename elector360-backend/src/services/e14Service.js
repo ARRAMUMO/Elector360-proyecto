@@ -480,31 +480,43 @@ const importarDesdeExcel = async (filePath, metadatos, campanaId) => {
     const nombresUnicos = [...new Set(resultados.filter(r => r.nombrePuesto).map(r => r.nombrePuesto.toUpperCase().trim()))];
     if (nombresUnicos.length > 0) {
       const personasPuestos = await Persona.aggregate([
+        { $match: { campana: new mongoose.Types.ObjectId(String(campanaId)) } },
         { $addFields: { _puestoUpper: { $toUpper: { $trim: { input: '$puesto.nombrePuesto' } } } } },
         { $match: { _puestoUpper: { $in: nombresUnicos } } },
-        { $group: { _id: '$_puestoUpper', municipioReal: { $first: '$puesto.municipio' } } }
+        { $group: { _id: { puesto: '$_puestoUpper', municipio: { $toUpper: { $trim: { input: '$puesto.municipio' } } } }, count: { $sum: 1 } } }
       ]);
 
-      const municipioMap = {}; // puestoUpper → municipio original de DB
+      // Construir mapa: puestoUpper → Set de municipios donde aparece en la campaña
+      const municipiosPorPuesto = {}; // puestoUpper → Set<municipioUpper>
+      const municipioOriginal = {};   // puestoUpper+municipioUpper → municipio con mayúsculas originales
       for (const p of personasPuestos) {
-        if (p._id) municipioMap[p._id] = p.municipioReal || '';
+        if (!p._id?.puesto) continue;
+        const pu = p._id.puesto;
+        const mu = p._id.municipio || '';
+        const muNorm = sinTildes(mu); // normalizar tildes para agrupar variantes
+        if (!municipiosPorPuesto[pu]) municipiosPorPuesto[pu] = new Set();
+        municipiosPorPuesto[pu].add(muNorm);
+        municipioOriginal[`${pu}|${muNorm}`] = mu;
       }
 
       const advertenciasMap = {};
       for (const r of resultados) {
         if (!r.nombrePuesto) continue;
         const keyPuesto = r.nombrePuesto.toUpperCase().trim();
-        const municipioRealOrig = municipioMap[keyPuesto];
-        if (!municipioRealOrig) continue;
-        const municipioRealUp = municipioRealOrig.toUpperCase().trim();
+        const municipiosEnCampana = municipiosPorPuesto[keyPuesto];
+        if (!municipiosEnCampana) continue;
+        // Si el puesto aparece en varios municipios de la campaña → nombre genérico, no alertar
+        if (municipiosEnCampana.size > 1) continue;
+        const municipioRealUp = [...municipiosEnCampana][0];
         const municipioExcelUp = (r.municipio || '').toUpperCase().trim();
-        if (municipioRealUp && municipioRealUp !== municipioExcelUp) {
+        // Normalizar tildes antes de comparar: "SANTO TOMAS" === "SANTO TOMÁS"
+        if (municipioRealUp && sinTildes(municipioRealUp) !== sinTildes(municipioExcelUp)) {
           const wKey = `${keyPuesto}|${municipioExcelUp}|${municipioRealUp}`;
           if (!advertenciasMap[wKey]) {
             advertenciasMap[wKey] = {
               nombrePuesto: r.nombrePuesto,
               municipioExcel: r.municipio,
-              municipioReal: municipioRealOrig,
+              municipioReal: municipioOriginal[`${keyPuesto}|${sinTildes(municipioRealUp)}`] || municipioRealUp,
               mesas: 0
             };
           }
