@@ -408,18 +408,20 @@ class PersonaService {
     const documentos = filas.map(f => f.documento);
 
     // 1. Búsqueda global: verificar si el documento ya existe en la BD (en cualquier campaña)
-    //    Esto evita duplicados absolutos e identifica personas ya registradas.
-    const existentesGlobal = await Persona.find({ documento: { $in: documentos } })
-      .select('documento lider nombres apellidos campana')
+    //    Incluye archivadas (archivado: false|true) para evitar colisión con índice único al reinsertar.
+    //    El pre-find middleware se activa solo si 'archivado' no está en la query; al incluirlo, lo evitamos.
+    const existentesGlobal = await Persona.find({ documento: { $in: documentos }, archivado: { $in: [true, false] } })
+      .select('documento lider nombres apellidos campana archivado')
       .lean();
     const existentesGlobalMap = {};
     existentesGlobal.forEach(e => { existentesGlobalMap[e.documento] = e; });
 
     // 2. Búsqueda en la misma campaña: detectar conflictos de líder dentro de esta campaña
-    const filtroMismaCampana = { documento: { $in: documentos } };
+    //    También incluye archivadas para detectar colisiones de índice.
+    const filtroMismaCampana = { documento: { $in: documentos }, archivado: { $in: [true, false] } };
     if (campanaId) filtroMismaCampana.campana = campanaId;
     const existentesCampana = await Persona.find(filtroMismaCampana)
-      .select('documento lider nombres apellidos')
+      .select('documento lider nombres apellidos archivado')
       .lean();
     const existentesCampanaMap = {};
     existentesCampana.forEach(e => { existentesCampanaMap[e.documento] = e; });
@@ -484,12 +486,35 @@ class PersonaService {
           });
         }
       } else {
-        // No existe en esta campaña — verificar si existe en otra (posible alianza)
+        // No existe en esta campaña — verificar si existe en otra (posible alianza o archivada)
         const globalExistente = existentesGlobalMap[f.documento];
         if (globalExistente) {
           const liderGlobalId = globalExistente.lider?.id?.toString();
           const liderImportId = String(usuario._id);
           const puedeAlianza = usuario.rol === 'ADMIN' || usuario.rol === 'COORDINADOR';
+
+          // Persona archivada (su líder/campaña anterior fue eliminado) → restaurar
+          if (globalExistente.archivado === true) {
+            const restoreFields = {
+              archivado: false,
+              lider: liderData,
+              ...(f.nombres && { nombres: f.nombres }),
+              ...(f.apellidos && { apellidos: f.apellidos }),
+              ...(f.telefono && { telefono: f.telefono }),
+              ...(f.email && { email: f.email }),
+              ...(f.estadoContacto && { estadoContacto: f.estadoContacto }),
+              ...(f.tipo && ['C', 'V'].includes(f.tipo) && { tipo: f.tipo }),
+              ...(Object.keys(puestoData).length > 0 && { puesto: puestoData }),
+              ...(campanaId && { campana: campanaId }),
+            };
+            actualizaciones.push({
+              updateOne: {
+                filter: { _id: globalExistente._id },
+                update: { $set: restoreFields, $unset: { motivoArchivo: 1 } }
+              }
+            });
+            return;
+          }
 
           if (liderGlobalId && liderGlobalId !== liderImportId) {
             // Pertenece a otro líder en otra campaña → omitir y avisar siempre
