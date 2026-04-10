@@ -332,10 +332,14 @@ class PersonaService {
   /**
    * Importar personas desde Excel con datos completos
    */
-  async importarDesdeExcel(filePath, usuario, campanaId = null) {
+  async importarDesdeExcel(filePathOrBuffer, usuario, campanaId = null) {
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
+    if (Buffer.isBuffer(filePathOrBuffer)) {
+      await workbook.xlsx.load(filePathOrBuffer);
+    } else {
+      await workbook.xlsx.readFile(filePathOrBuffer);
+    }
 
     const worksheet = workbook.getWorksheet(1);
     if (!worksheet) {
