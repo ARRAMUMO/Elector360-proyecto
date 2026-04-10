@@ -325,39 +325,39 @@ exports.importarDesdeExcel = asyncHandler(async (req, res) => {
 
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (!['.xlsx', '.xls'].includes(ext)) {
+    await fs.unlink(req.file.path);
     throw new ApiError(400, 'El archivo debe ser Excel (.xlsx o .xls)');
   }
 
-  // ADMIN/COORDINADOR pueden seleccionar el lider y campaña destino
-  let usuarioLider = req.user;
-  let campanaId = req.campanaId;
+  try {
+    // ADMIN/COORDINADOR pueden seleccionar el lider y campaña destino
+    let usuarioLider = req.user;
+    let campanaId = req.campanaId;
 
-  const { liderId, campanaId: campanaIdBody } = req.body || {};
+    const { liderId, campanaId: campanaIdBody } = req.body || {};
 
-  if (liderId && (req.user.rol === 'ADMIN' || req.user.rol === 'COORDINADOR')) {
-    const liderEncontrado = await Usuario.findById(liderId).select('perfil email rol').lean();
-    if (!liderEncontrado) throw new ApiError(400, 'El líder seleccionado no existe');
-    usuarioLider = liderEncontrado;
-  }
+    if (liderId && (req.user.rol === 'ADMIN' || req.user.rol === 'COORDINADOR')) {
+      const liderEncontrado = await Usuario.findById(liderId).select('perfil email rol').lean();
+      if (!liderEncontrado) throw new ApiError(400, 'El líder seleccionado no existe');
+      usuarioLider = liderEncontrado;
+    }
 
-  if (campanaIdBody && req.user.rol === 'ADMIN') {
-    campanaId = campanaIdBody;
-  }
+    if (campanaIdBody && req.user.rol === 'ADMIN') {
+      campanaId = campanaIdBody;
+    }
 
-  // Usar buffer en memoria (evita problemas de permisos en el directorio uploads)
-  const fileData = req.file.buffer || req.file.path;
-  const resultado = await personaService.importarDesdeExcel(fileData, usuarioLider, campanaId);
+    const resultado = await personaService.importarDesdeExcel(req.file.path, usuarioLider, campanaId);
+    await fs.unlink(req.file.path);
 
-  // Limpiar archivo del disco si se usó diskStorage como fallback
-  if (req.file.path) {
+    res.json({
+      success: true,
+      message: `Importación completada: ${resultado.creadas} creadas, ${resultado.actualizadas} actualizadas`,
+      data: resultado
+    });
+  } catch (error) {
     await fs.unlink(req.file.path).catch(() => {});
+    throw error;
   }
-
-  res.json({
-    success: true,
-    message: `Importación completada: ${resultado.creadas} creadas, ${resultado.actualizadas} actualizadas`,
-    data: resultado
-  });
 });
 
 /**
