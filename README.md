@@ -11,7 +11,10 @@ Sistema integral de gestion electoral para el seguimiento, administracion y cons
 - **Exportacion** a Excel y CSV
 - **Estado RPA visible** en tabla principal (Actualizado, Pendiente, Error, Sin consultar)
 - **Cambio rapido de estado** de contacto (Pendiente, Contactado, Confirmado, No Contactado)
-- **Aviso de conflicto al importar**: si una persona ya pertenece a otro lider de la misma campana, se omite y se muestra un reporte detallado en el modal sin cerrar automaticamente
+- **Aviso de conflicto al importar**: si una persona ya pertenece a un lider activo de la misma campana, se omite y se muestra un reporte detallado en el modal (con nombre del lider actual) sin cerrar automaticamente
+- **Reasignacion automatica de personas huerfanas**: si al importar una persona tiene un lider asignado que fue eliminado del sistema, se reasigna automaticamente al lider que realiza la importacion sin necesidad de intervencion manual
+- **Deteccion de cedulas duplicadas en el archivo**: si una cedula aparece mas de una vez en el Excel, se reporta como error en cada fila donde aparece indicando los numeros de fila del duplicado; solo se procesa la primera ocurrencia
+- **Identificacion del lider en errores de duplicado**: cuando insertMany detecta un conflicto de clave unica, el error ya no dice "posible duplicado" sino que muestra el nombre del lider que ya tiene esa persona
 - **Asignar lider al crear**: Admin y Coordinador pueden seleccionar a que lider asignar la nueva persona directamente desde el modal de creacion
 - **Filtrar por lider desde Usuarios**: el boton "Ver personas" en la tabla de usuarios navega a /personas con filtro por lider activo y banner informativo
 - **Modal con botones siempre visibles**: el modal de nueva persona usa layout flex con footer sticky, los botones Cancelar/Crear Persona son siempre accesibles sin importar el scroll
