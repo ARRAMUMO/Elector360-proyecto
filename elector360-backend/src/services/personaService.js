@@ -408,17 +408,25 @@ class PersonaService {
     const documentos = filas.map(f => f.documento);
 
     // 1. Búsqueda global: verificar si el documento ya existe en la BD (en cualquier campaña)
-    //    Incluye archivadas (archivado: false|true) para evitar colisión con índice único al reinsertar.
+    //    Incluye archivadas y documentos sin campo archivado (null) para evitar colisión con índice único.
     //    El pre-find middleware se activa solo si 'archivado' no está en la query; al incluirlo, lo evitamos.
-    const existentesGlobal = await Persona.find({ documento: { $in: documentos }, archivado: { $in: [true, false] } })
+    const existentesGlobal = await Persona.find({ documento: { $in: documentos }, archivado: { $in: [true, false, null] } })
       .select('documento lider nombres apellidos campana archivado')
       .lean();
     const existentesGlobalMap = {};
     existentesGlobal.forEach(e => { existentesGlobalMap[e.documento] = e; });
 
+    // Pre-fetch: verificar qué líderes referenciados aún existen en la BD
+    // Permite reasignar personas cuyo líder fue eliminado
+    const liderIdsReferenciados = [...new Set(
+      existentesGlobal.map(e => e.lider?.id?.toString()).filter(Boolean)
+    )];
+    const lideresVivos = await Usuario.find({ _id: { $in: liderIdsReferenciados } }).select('_id').lean();
+    const lideresVivosSet = new Set(lideresVivos.map(u => u._id.toString()));
+
     // 2. Búsqueda en la misma campaña: detectar conflictos de líder dentro de esta campaña
-    //    También incluye archivadas para detectar colisiones de índice.
-    const filtroMismaCampana = { documento: { $in: documentos }, archivado: { $in: [true, false] } };
+    //    También incluye archivadas y null para detectar colisiones de índice.
+    const filtroMismaCampana = { documento: { $in: documentos }, archivado: { $in: [true, false, null] } };
     if (campanaId) filtroMismaCampana.campana = campanaId;
     const existentesCampana = await Persona.find(filtroMismaCampana)
       .select('documento lider nombres apellidos archivado')
@@ -454,15 +462,34 @@ class PersonaService {
         const liderActualId = existente.lider?.id?.toString();
         const liderImportId = String(usuario._id);
 
-        // Conflicto: existe en esta campaña bajo otro líder → omitir y avisar
+        // Conflicto: existe en esta campaña bajo otro líder
         if (liderActualId && liderActualId !== liderImportId) {
+          // Si el líder fue eliminado → reasignar al nuevo líder
+          if (!lideresVivosSet.has(liderActualId)) {
+            const updateFields = { lider: liderData };
+            if (f.nombres) updateFields.nombres = f.nombres;
+            if (f.apellidos) updateFields.apellidos = f.apellidos;
+            if (f.telefono) updateFields.telefono = f.telefono;
+            if (f.email) updateFields.email = f.email;
+            if (f.estadoContacto) updateFields.estadoContacto = f.estadoContacto;
+            if (f.tipo && ['C', 'V'].includes(f.tipo)) updateFields.tipo = f.tipo;
+            if (Object.keys(puestoData).length > 0) updateFields.puesto = puestoData;
+            actualizaciones.push({
+              updateOne: {
+                filter: { _id: existente._id },
+                update: { $set: updateFields }
+              }
+            });
+            return;
+          }
+          // Líder activo → avisar
           enOtroLider.push({
             fila: f.fila,
             cedula: f.documento,
             nombres: `${existente.nombres || f.nombres || ''} ${existente.apellidos || f.apellidos || ''}`.trim(),
             liderActual: existente.lider?.nombre || 'Desconocido'
           });
-          return; // No tocar
+          return;
         }
 
         // Mismo líder en esta campaña → actualizar datos
@@ -517,7 +544,29 @@ class PersonaService {
           }
 
           if (liderGlobalId && liderGlobalId !== liderImportId) {
-            // Pertenece a otro líder en otra campaña → omitir y avisar siempre
+            // Si el líder fue eliminado → reasignar al nuevo líder
+            if (!lideresVivosSet.has(liderGlobalId)) {
+              const restoreFields = {
+                lider: liderData,
+                archivado: false,
+                ...(f.nombres && { nombres: f.nombres }),
+                ...(f.apellidos && { apellidos: f.apellidos }),
+                ...(f.telefono && { telefono: f.telefono }),
+                ...(f.email && { email: f.email }),
+                ...(f.estadoContacto && { estadoContacto: f.estadoContacto }),
+                ...(f.tipo && ['C', 'V'].includes(f.tipo) && { tipo: f.tipo }),
+                ...(Object.keys(puestoData).length > 0 && { puesto: puestoData }),
+                ...(campanaId && { campana: campanaId }),
+              };
+              actualizaciones.push({
+                updateOne: {
+                  filter: { _id: globalExistente._id },
+                  update: { $set: restoreFields, $unset: { motivoArchivo: 1 } }
+                }
+              });
+              return;
+            }
+            // Líder activo → avisar
             enOtroLider.push({
               fila: f.fila,
               cedula: f.documento,
@@ -574,18 +623,36 @@ class PersonaService {
 
     // Insertar nuevas en batch
     if (nuevas.length > 0) {
-      const resultado = await Persona.insertMany(nuevas, { ordered: false }).catch(err => {
+      const resultado = await Persona.insertMany(nuevas, { ordered: false }).catch(async err => {
         // Manejar errores de duplicados parciales
-        if (err.insertedDocs) {
-          creadas = err.insertedDocs.length;
-          err.writeErrors?.forEach(we => {
+        if (err.insertedDocs || err.writeErrors) {
+          creadas = err.insertedDocs?.length || 0;
+          const failedDocs = (err.writeErrors || [])
+            .map(we => nuevas[we.index]?.documento)
+            .filter(Boolean);
+
+          // Buscar quién tiene esos documentos para mostrar el líder real
+          const dupInfoMap = {};
+          if (failedDocs.length > 0) {
+            const dupPersonas = await Persona.find({
+              documento: { $in: failedDocs },
+              archivado: { $in: [true, false, null] }
+            }).select('documento lider nombres apellidos').lean();
+            dupPersonas.forEach(d => { dupInfoMap[d.documento] = d; });
+          }
+
+          (err.writeErrors || []).forEach(we => {
+            const doc = nuevas[we.index]?.documento;
+            const dup = dupInfoMap[doc];
             errores.push({
-              fila: filas.find(f => f.documento === nuevas[we.index]?.documento)?.fila,
-              cedula: nuevas[we.index]?.documento,
-              error: 'Error al insertar (posible duplicado)'
+              fila: filas.find(f => f.documento === doc)?.fila,
+              cedula: doc,
+              error: dup?.lider?.nombre
+                ? `Ya existe bajo el líder: ${dup.lider.nombre}`
+                : 'Error al insertar (posible duplicado)'
             });
           });
-          return err.insertedDocs;
+          return err.insertedDocs || [];
         }
         throw err;
       });
