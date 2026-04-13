@@ -1,4 +1,5 @@
 const Persona = require('../models/Persona');
+const Usuario = require('../models/Usuario');
 const ApiError = require('../utils/ApiError');
 
 class PersonaService {
@@ -177,7 +178,6 @@ class PersonaService {
    * accion: 'MOVER' | 'COMPARTIR'
    */
   async cambiarCampana(id, campanaDestino, accion, usuarioId, rol) {
-    const Usuario = require('../models/Usuario');
     const persona = await Persona.findById(id);
     if (!persona) throw new ApiError(404, 'Persona no encontrada');
 
