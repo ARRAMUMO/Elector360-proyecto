@@ -21,9 +21,8 @@ jobs:
             echo ">> Pulling latest code..."
             git pull origin main
 
-            echo ">> Rebuilding backend..."
-            docker compose down
-            docker compose up -d --build
+            echo ">> Restarting backend (PM2)..."
+            pm2 restart elector360-api
 
             echo ">> Building frontend..."
             cd elector360-frontend
