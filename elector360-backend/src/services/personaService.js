@@ -385,16 +385,41 @@ class PersonaService {
       throw new ApiError(400, 'No se encontraron datos válidos en el archivo');
     }
 
+    // Validar cédulas duplicadas dentro del mismo archivo
+    const filasPorDocumento = {};
+    filas.forEach(f => {
+      if (!filasPorDocumento[f.documento]) filasPorDocumento[f.documento] = [];
+      filasPorDocumento[f.documento].push(f.fila);
+    });
+    const documentosDuplicados = new Set();
+    Object.entries(filasPorDocumento).forEach(([doc, filasList]) => {
+      if (filasList.length > 1) {
+        documentosDuplicados.add(doc);
+        filasList.forEach((filaNum, i) => {
+          errores.push({
+            fila: filaNum,
+            cedula: doc,
+            error: `Cédula duplicada en el archivo (aparece en filas: ${filasList.join(', ')})`
+          });
+        });
+      }
+    });
+    // Excluir duplicados del procesamiento (solo se procesa la primera ocurrencia)
+    const filasUnicas = filas.filter((f, idx) => {
+      if (!documentosDuplicados.has(f.documento)) return true;
+      return filasPorDocumento[f.documento][0] === f.fila;
+    });
+
     // Validar estadoContacto
     const estadosValidos = ['PENDIENTE', 'CONTACTADO', 'CONFIRMADO', 'NO_CONTACTADO'];
-    filas.forEach(f => {
+    filasUnicas.forEach(f => {
       if (f.estadoContacto && !estadosValidos.includes(f.estadoContacto)) {
         f.estadoContacto = 'PENDIENTE';
       }
     });
 
     // Validar teléfonos
-    filas.forEach(f => {
+    filasUnicas.forEach(f => {
       if (f.telefono && !/^3\d{9}$/.test(f.telefono)) {
         errores.push({
           fila: f.fila,
@@ -405,7 +430,7 @@ class PersonaService {
       }
     });
 
-    const documentos = filas.map(f => f.documento);
+    const documentos = filasUnicas.map(f => f.documento);
 
     // 1. Búsqueda global: verificar si el documento ya existe en la BD (en cualquier campaña)
     //    Incluye archivadas y documentos sin campo archivado (null) para evitar colisión con índice único.
@@ -447,7 +472,7 @@ class PersonaService {
     const alianzas = []; // Vínculos de alianza: $addToSet campanas[]
     const enOtroLider = []; // Conflicto: existe bajo otro líder
 
-    filas.forEach(f => {
+    filasUnicas.forEach(f => {
       const puestoData = {};
       if (f.departamento) puestoData.departamento = f.departamento;
       if (f.municipio) puestoData.municipio = f.municipio;
