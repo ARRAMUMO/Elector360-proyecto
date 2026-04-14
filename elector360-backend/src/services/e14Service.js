@@ -787,20 +787,23 @@ const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas')
   const personasQuery = { ...filtroCampana(campanaId) };
   if (liderFiltro) personasQuery['lider.id'] = liderFiltro;
 
-  const [resultados, personas] = await Promise.all([
+  const [resultados, personas, todasPersonas] = await Promise.all([
     ResultadoMesa.find({ campana: campanaId }).lean(),
     Persona.find(personasQuery)
       .select('nombres apellidos documento telefono estadoContacto estadoVoto notaVoto puesto lider')
-      .lean()
+      .lean(),
+    // Conteo total por mesa (todas las personas de la campaña, sin filtro de líder)
+    // necesario para calcular efectividad y estado en el resumen por mesa
+    liderFiltro
+      ? Persona.find(filtroCampana(campanaId)).select('puesto').lean()
+      : Promise.resolve(null)
   ]);
 
-  // Mapa de conteos por mesa
+  // countMap: total de personas por mesa en toda la campaña (para resumen)
   const countMap = new Map();
-  for (const p of personas) {
+  for (const p of (todasPersonas || personas)) {
     const key = normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa);
-    const e = countMap.get(key) || { total: 0 };
-    e.total++;
-    countMap.set(key, e);
+    countMap.set(key, (countMap.get(key) || 0) + 1);
   }
 
   // Mapa de votos por mesa
@@ -837,7 +840,7 @@ const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas')
 
     for (const r of resultados) {
       const key = normKey(r.departamento, r.municipio, r.zona, r.nombrePuesto, r.mesa);
-      const personas_count = (countMap.get(key) || {}).total || 0;
+      const personas_count = countMap.get(key) || 0;
       const votos = r.votosObtenidos || 0;
       const efectividad = personas_count > 0 ? Math.round((votos / personas_count) * 100) : null;
       let estadoVoto;
@@ -888,25 +891,10 @@ const exportarInforme = async (campanaId, liderFiltro = null, tipo = 'personas')
   const contactoLabels = { CONFIRMADO: 'Confirmado', CONTACTADO: 'Contactado', NO_CONTACTADO: 'No contactado', PENDIENTE: 'Pendiente' };
 
   for (const p of personas) {
-    const mesaKey = normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa);
-    const tieneE14 = votosMap.has(mesaKey);
-    const votos = votosMap.get(mesaKey) ?? 0;
-    const totalEnMesa = (countMap.get(mesaKey) || {}).total || 1;
-    let ev;
-    if (!tieneE14 || votos === 0) {
-      ev = 'NO_CUMPLIDO';
-    } else if (votos >= totalEnMesa) {
-      ev = 'CUMPLIDO';
-    } else {
-      ev = 'VERIFICABLE';
-    }
-    const notaVoto = !tieneE14
-      ? 'No hay votos'
-      : votos === 0
-        ? 'Sin votos del candidato en esta mesa'
-        : votos >= totalEnMesa
-          ? `${votos} votos para ${totalEnMesa} personas registradas`
-          : `${votos} de ${totalEnMesa} personas registradas votaron`;
+    // Usar el estadoVoto guardado (calculado por verificarVotos con todos los líderes)
+    // para que el informe coincida exactamente con lo que muestra la sección E-14
+    const ev = p.estadoVoto || 'SIN_DATOS';
+    const notaVoto = p.notaVoto || (votosMap.has(normKey(p.puesto?.departamento, p.puesto?.municipio, p.puesto?.zona, p.puesto?.nombrePuesto, p.puesto?.mesa)) ? '' : 'Sin datos E-14');
 
     const row = ws2.addRow({
       documento: p.documento || '',
