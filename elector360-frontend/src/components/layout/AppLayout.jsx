@@ -71,6 +71,12 @@ function AppLayout() {
       roles: ['ADMIN', 'COORDINADOR', 'LIDER']
     },
     {
+      name: 'Informes',
+      icon: '📑',
+      path: '/informes',
+      roles: ['ADMIN']
+    },
+    {
       name: 'Monitor RPA',
       icon: '🤖',
       path: '/worker-monitor',

@@ -137,7 +137,7 @@ const consultaService = {
    */
   async crearConsultaRPA(documento, prioridad = 2) {
     try {
-      const response = await api.post('/consultas', {
+      const response = await api.post('/consultas/solicitar-actualizacion', {
         documento,
         prioridad
       });

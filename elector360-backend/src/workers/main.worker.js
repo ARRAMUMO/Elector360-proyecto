@@ -10,17 +10,19 @@ const config = require('./config/worker.config');
 class RPAWorker {
   constructor() {
     this.pool = null;
-    this.isRunning = false;
+    this.isRunning = false;  // pool inicializado y listo
+    this.isPolling = false;  // procesando consultas activamente
     this.pollInterval = 5000; // 5 segundos
     this.pollTimer = null;
   }
 
   /**
-   * Iniciar worker
+   * Iniciar worker en modo standby: conecta, recupera bloqueadas,
+   * inicializa el pool (browsers), pero NO empieza a procesar consultas.
    */
   async start() {
     try {
-      console.log('🚀 Iniciando RPA Worker...');
+      console.log('🚀 Iniciando RPA Worker (modo standby)...');
 
       // Conectar a MongoDB si no está conectado
       if (mongoose.connection.readyState !== 1) {
@@ -31,23 +33,45 @@ class RPAWorker {
       // Recuperar consultas que quedaron en PROCESANDO de sesiones anteriores
       await this.recuperarConsultasBloqueadas();
 
-      // Inicializar pool
+      // Inicializar pool (abre browsers, listo para recibir trabajos)
       this.pool = new WorkerPool();
       await this.pool.init();
 
       // Configurar event listeners
       this.setupEventListeners();
 
-      // Iniciar polling
       this.isRunning = true;
-      this.startPolling();
-
-      console.log('✅ RPA Worker iniciado');
+      console.log('⏸️ RPA Worker en standby — usa startProcessing() para empezar');
 
     } catch (error) {
       console.error('❌ Error iniciando worker:', error);
       throw error;
     }
+  }
+
+  /**
+   * Iniciar procesamiento de consultas (salir de standby).
+   */
+  startProcessing() {
+    if (!this.isRunning) {
+      console.warn('⚠️ Worker no está inicializado. Llama start() primero.');
+      return;
+    }
+    if (this.isPolling) return;
+    this.isPolling = true;
+    console.log('▶️ RPA Worker iniciando procesamiento de consultas...');
+    this.startPolling();
+  }
+
+  /**
+   * Detener procesamiento de consultas (volver a standby).
+   * Los browsers permanecen abiertos y listos.
+   */
+  stopProcessing() {
+    if (!this.isPolling) return;
+    this.isPolling = false;
+    this.pausePolling();
+    console.log('⏸️ RPA Worker pausado — volviendo a standby');
   }
 
   /**
@@ -130,7 +154,7 @@ class RPAWorker {
    * Solo toma lo que el pool puede manejar realmente
    */
   async poll() {
-    if (!this.isRunning) return;
+    if (!this.isPolling) return;
 
     try {
       const maxConcurrent = config.pool?.maxConcurrent || 5;
@@ -244,6 +268,11 @@ class RPAWorker {
         return;
       }
 
+      if (consulta.estado === 'CANCELADO') {
+        console.log(`⏭️ [${source}] Consulta ${job.consultaId} fue cancelada, ignorando resultado`);
+        return;
+      }
+
       if (result.success) {
         // Guardar o actualizar persona
         const persona = await this.guardarPersona(result.datos, consulta.usuario || consulta.personaId);
@@ -316,6 +345,11 @@ class RPAWorker {
       const consulta = await Model.findById(job.consultaId);
       if (!consulta) {
         console.warn(`⚠️ Consulta ${job.consultaId} no encontrada en ${source}`);
+        return;
+      }
+
+      if (consulta.estado === 'CANCELADO') {
+        console.log(`⏭️ [${source}] Consulta ${job.consultaId} fue cancelada, ignorando fallo`);
         return;
       }
 
@@ -417,18 +451,50 @@ class RPAWorker {
   }
 
   /**
+   * Cancelar todas las consultas pendientes y en ejecución.
+   * 1. Vacía la cola en memoria del pool (rechaza las promesas).
+   * 2. Marca EN_COLA/PENDIENTE/PROCESANDO como CANCELADO en ambas colecciones.
+   * Los jobs que ya están scrapeando en el browser terminarán, pero handleJobCompleted
+   * detectará el estado CANCELADO y no guardará resultados.
+   */
+  async cancelarTodas() {
+    const canceladosPool = this.pool ? this.pool.cancelAll() : 0;
+
+    const [rpaResult, colaResult] = await Promise.all([
+      ConsultaRPA.updateMany(
+        { estado: { $in: ['EN_COLA', 'PROCESANDO'] } },
+        { $set: { estado: 'CANCELADO', error: 'Cancelado manualmente', completadoEn: new Date() } }
+      ),
+      ColaConsulta.updateMany(
+        { estado: { $in: ['PENDIENTE', 'PROCESANDO'] } },
+        { $set: { estado: 'CANCELADO', ultimoError: 'Cancelado manualmente', fechaProcesamiento: new Date() } }
+      )
+    ]);
+
+    console.log(`🚫 Canceladas: ${rpaResult.modifiedCount} ConsultaRPA + ${colaResult.modifiedCount} ColaConsulta + ${canceladosPool} del pool`);
+
+    return {
+      consultaRPA: rpaResult.modifiedCount,
+      colaConsulta: colaResult.modifiedCount,
+      pool: canceladosPool
+    };
+  }
+
+  /**
    * Detener worker
    */
   async stop() {
     console.log('🛑 Deteniendo RPA Worker...');
-    
+
     this.isRunning = false;
+    this.isPolling = false;
     this.pausePolling();
-    
+
     if (this.pool) {
       await this.pool.shutdown();
+      this.pool = null;
     }
-    
+
     console.log('✅ RPA Worker detenido');
   }
 
@@ -437,7 +503,11 @@ class RPAWorker {
    */
   getStats() {
     if (!this.pool) return null;
-    return this.pool.getStats();
+    return {
+      ...this.pool.getStats(),
+      isRunning: this.isRunning,
+      isPolling: this.isPolling
+    };
   }
 }
 
@@ -452,15 +522,31 @@ module.exports = {
     await workerInstance.start();
     return workerInstance;
   },
-  
+
   stop: async () => {
     if (workerInstance) {
       await workerInstance.stop();
       workerInstance = null;
     }
   },
-  
+
+  startProcessing: () => {
+    if (workerInstance) workerInstance.startProcessing();
+  },
+
+  stopProcessing: () => {
+    if (workerInstance) workerInstance.stopProcessing();
+  },
+
   getStats: () => {
     return workerInstance ? workerInstance.getStats() : null;
-  }
+  },
+
+  cancelarTodas: async () => {
+    if (workerInstance) return await workerInstance.cancelarTodas();
+    return { consultaRPA: 0, colaConsulta: 0, pool: 0 };
+  },
+
+  isInitialized: () => !!workerInstance?.isRunning,
+  isPolling: () => !!workerInstance?.isPolling
 };

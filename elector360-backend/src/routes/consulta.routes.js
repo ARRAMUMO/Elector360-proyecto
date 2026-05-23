@@ -26,6 +26,9 @@ router.post('/reclamar/:personaId', consultaController.reclamarPersona);
 // Registrar nueva persona en esta campaña (cuando viene de otra campaña)
 router.post('/registrar-nueva', consultaController.registrarNuevaPersona);
 
+// Forzar actualización RPA para persona existente
+router.post('/solicitar-actualizacion', consultaController.solicitarActualizacionRPA);
+
 // Historial de consultas
 router.get('/historial', consultaController.obtenerHistorial);
 

@@ -11,11 +11,12 @@ const helpers = require('../utils/helpers');
 puppeteer.use(StealthPlugin());
 
 class RegistraduriaScrap {
-  constructor() {
+  constructor(workerIndex = 0) {
     this.browser = null;
     this.page = null;
     this.cursor = null;
     this._chromePid = null; // PID del proceso Chrome de Puppeteer
+    this._workerIndex = workerIndex;
   }
 
   /**
@@ -23,12 +24,19 @@ class RegistraduriaScrap {
    * Mata procesos Chrome huérfanos y elimina los lock files.
    * Es async para poder esperar al OS antes de relanzar.
    */
+  _getProfileDir() {
+    const base = config.puppeteer.userDataDir;
+    if (!base) return base;
+    // Worker 0 usa el directorio base; workers adicionales usan base-N
+    return this._workerIndex === 0 ? base : `${base}-${this._workerIndex}`;
+  }
+
   async _limpiarLockFiles() {
     const fs = require('fs');
     const path = require('path');
     const { execSync } = require('child_process');
 
-    const profileDir = config.puppeteer.userDataDir;
+    const profileDir = this._getProfileDir();
     if (!profileDir) return;
 
     const profileName = path.basename(profileDir);
@@ -36,8 +44,7 @@ class RegistraduriaScrap {
       ? path.basename(config.puppeteer.executablePath)
       : 'chrome.exe';
 
-    // Siempre matar cualquier Chrome usando este perfil (por PID si lo tenemos, sino por nombre de perfil).
-    // Esto limpia tanto procesos huérfanos de sesiones anteriores como el proceso actual.
+    // Matar Chrome por PID conocido o buscando por nombre de perfil
     let mato = false;
     if (this._chromePid) {
       try {
@@ -46,12 +53,11 @@ class RegistraduriaScrap {
         } else {
           execSync(`kill -9 ${this._chromePid} 2>/dev/null || true`, { stdio: 'ignore', timeout: 3000 });
         }
-        console.log(`🔒 Chrome (PID ${this._chromePid}) terminado antes de reiniciar`);
+        console.log(`🔒 Chrome (PID ${this._chromePid}) terminado`);
         mato = true;
       } catch (_) { /* ya cerrado */ }
       this._chromePid = null;
     } else {
-      // Sin PID guardado: buscar por perfil (captura procesos huérfanos de sesiones anteriores)
       try {
         if (process.platform === 'win32') {
           execSync(
@@ -62,18 +68,29 @@ class RegistraduriaScrap {
           execSync(`pkill -f "${exeName.replace('.exe', '')}.*${profileName}" 2>/dev/null || true`, { stdio: 'ignore', timeout: 5000 });
         }
         mato = true;
-      } catch (_) { /* no hay procesos bloqueando, ok */ }
+      } catch (_) { /* sin procesos, ok */ }
     }
 
-    // Si se mató un Chrome, esperar a que el OS libere el lock del perfil antes de relanzar
     if (mato) {
       await new Promise(resolve => setTimeout(resolve, 800));
     }
 
-    // Eliminar lock files que Chrome no haya limpiado (por cierre forzado)
+    // Eliminar lock files individuales
     const lockFileNames = ['SingletonLock', 'lockfile', 'DevToolsActivePort', 'SingletonSocket', 'SingletonCookie'];
     for (const nombre of lockFileNames) {
-      try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (_) { /* no existe, ok */ }
+      try { fs.unlinkSync(path.join(profileDir, nombre)); } catch (_) {}
+    }
+
+    // Si el directorio Default/Preferences está corrupto, eliminarlo para forzar recreación limpia
+    const prefsPath = path.join(profileDir, 'Default', 'Preferences');
+    if (fs.existsSync(prefsPath)) {
+      try {
+        const prefs = fs.readFileSync(prefsPath, 'utf8');
+        JSON.parse(prefs); // si no parsea, está corrupto
+      } catch (_) {
+        console.log(`⚠️ Perfil corrupto detectado en ${profileDir}, limpiando...`);
+        try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (_) {}
+      }
     }
   }
 
@@ -98,13 +115,15 @@ class RegistraduriaScrap {
       const { createCursor } = require('ghost-cursor');
       const UserAgent = require('user-agents');
 
-      const userAgent = new UserAgent().toString();
+      // Generar user-agent realista de Chromium en Windows
+      const userAgent = new UserAgent({ deviceCategory: 'desktop' }).toString();
+
       const launchOptions = {
         ...config.puppeteer,
+        userDataDir: this._getProfileDir(),
         args: [
           ...(config.puppeteer.args || []),
           `--user-agent=${userAgent}`,
-          '--disable-blink-features=AutomationControlled'
         ]
       };
 
@@ -116,7 +135,7 @@ class RegistraduriaScrap {
 
       this.browser = await puppeteer.launch(launchOptions);
       this._chromePid = this.browser.process()?.pid ?? null;
-      console.log(`🌐 Chrome iniciado${this._chromePid ? ` (PID ${this._chromePid})` : ' (PID no disponible)'}`);
+      console.log(`🌐 Chromium iniciado${this._chromePid ? ` (PID ${this._chromePid})` : ''} | UA: ${userAgent.substring(0, 60)}...`);
       this.page = await this.browser.newPage();
 
       // Autenticación de Proxy (si es requerida)
@@ -130,42 +149,68 @@ class RegistraduriaScrap {
       this.cursor = createCursor(this.page);
       this.page.setDefaultTimeout(config.puppeteer.timeout);
 
-      // Anti-detección: eliminar señales de automation
-      await this.page.evaluateOnNewDocument(() => {
-        // Ocultar webdriver
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      // Anti-detección: parchear señales que delatan automatización
+      await this.page.evaluateOnNewDocument((ua) => {
+        // 1. Ocultar webdriver
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 
-        // Chrome runtime real
-        window.chrome = {
-          runtime: {},
-          loadTimes: function() {},
-          csi: function() {},
-          app: { isInstalled: false }
-        };
+        // 2. Simular chrome runtime (Chromium sin Google igual lo necesita para reCAPTCHA)
+        if (!window.chrome) {
+          window.chrome = {
+            runtime: {
+              onMessage: { addListener: () => {} },
+              sendMessage: () => {}
+            },
+            loadTimes: function() { return {}; },
+            csi: function() { return {}; },
+            app: { isInstalled: false }
+          };
+        }
 
-        // Plugins reales (Chrome normal tiene al menos 3)
+        // 3. Plugins realistas
         Object.defineProperty(navigator, 'plugins', {
-          get: () => [
-            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-            { name: 'Native Client', filename: 'internal-nacl-plugin' }
-          ]
+          get: () => {
+            const plugins = [
+              { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+              { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: '' },
+              { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: '' },
+              { name: 'Microsoft Edge PDF Viewer', filename: 'internal-pdf-viewer', description: '' },
+              { name: 'WebKit built-in PDF', filename: 'internal-pdf-viewer', description: '' },
+            ];
+            plugins.item = (i) => plugins[i];
+            plugins.namedItem = (n) => plugins.find(p => p.name === n) || null;
+            plugins.refresh = () => {};
+            Object.defineProperty(plugins, 'length', { get: () => plugins.length });
+            return plugins;
+          },
+          enumerable: true
         });
 
-        // Idiomas reales
-        Object.defineProperty(navigator, 'languages', {
-          get: () => ['es-CO', 'es', 'en-US', 'en']
-        });
+        // 4. Idioma y zona horaria colombiana
+        Object.defineProperty(navigator, 'languages', { get: () => ['es-CO', 'es', 'en-US', 'en'] });
+        Object.defineProperty(navigator, 'language',  { get: () => 'es-CO' });
 
-        // Permissions normales (no automation)
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) =>
-          parameters.name === 'notifications'
+        // 5. Platform realista
+        Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
+        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+
+        // 6. Permissions sin pistas de automation
+        const origPerms = window.navigator.permissions.query.bind(navigator.permissions);
+        window.navigator.permissions.query = (params) =>
+          params.name === 'notifications'
             ? Promise.resolve({ state: Notification.permission })
-            : originalQuery(parameters);
-      });
+            : origPerms(params);
 
-      console.log('✅ Navegador inicializado (anti-detección activa)');
+        // 7. Ocultar que es headless
+        Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+
+        // 8. User-agent consistente en JS
+        Object.defineProperty(navigator, 'userAgent', { get: () => ua });
+
+      }, userAgent);
+
+      console.log('✅ Chromium iniciado con anti-detección completa');
     } catch (error) {
       console.error('❌ Error inicializando navegador:', error);
       throw error;
@@ -437,7 +482,24 @@ class RegistraduriaScrap {
         return await this._esperarCaptchaManual();
       }
 
-      // 2. Resolver con el servicio apropiado
+      // El click abrió el image challenge — recargar la página para limpiar el estado
+      // del reCAPTCHA antes de inyectar el token. Así el token se aplica sobre un
+      // reCAPTCHA en estado inicial, sin el modal bloqueando.
+      console.log('🔄 Recargando página para limpiar estado de reCAPTCHA antes de inyectar token...');
+      await this.page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
+      await helpers.randomDelay(2000, 3000);
+
+      // Volver a llenar el formulario tras la recarga
+      const documentoActual = await this.page.evaluate(() => {
+        const inputs = Array.from(document.querySelectorAll('input[type="text"],input[type="number"]'));
+        const visible = inputs.find(el => el.offsetParent !== null);
+        return visible?.value || '';
+      });
+      if (documentoActual) {
+        await this.llenarFormulario(documentoActual);
+      }
+
+      // 2. Resolver con el servicio apropiado (inyección sin haber tocado el checkbox)
       const pageUrl = this.page.url();
       const solution = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
 
@@ -464,10 +526,10 @@ class RegistraduriaScrap {
 
       // Captcha no marcado: recargar y reintentar una vez más
       console.log('🔄 Captcha no verificado, recargando página para reintentar...');
-      const documentoActual = await this.page.evaluate(() => document.querySelector('#document')?.value || '');
+      const documentoActual2 = await this.page.evaluate(() => document.querySelector('#document')?.value || '');
       await this.page.reload({ waitUntil: 'networkidle2', timeout: 30000 });
       await helpers.randomDelay(2000, 3000);
-      await this.llenarFormulario(documentoActual);
+      await this.llenarFormulario(documentoActual2);
       const solution2 = await captchaResolver.solveRecaptcha(siteKey, pageUrl, isBatch);
       if (solution2) {
         await this._inyectarTokenCaptcha(solution2);
@@ -732,11 +794,18 @@ class RegistraduriaScrap {
   }
 
   /**
-   * Verificar si el captcha fue resuelto (botón habilitado)
+   * Verificar si el captcha fue resuelto (botón habilitado o página ya en /Polling)
    * Si la página está navegando (form auto-enviado), se toma como éxito
    */
   async _verificarCaptchaResuelto() {
     try {
+      // Si ya estamos en la página de resultados, el formulario se envió con éxito
+      const currentUrl = this.page.url();
+      if (/\/Polling|\/polling|\/resultado/i.test(currentUrl)) {
+        console.log('📡 Página ya en resultados (/Polling): captcha aceptado');
+        return true;
+      }
+
       return await this.page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button'));
         const submitButton = buttons.find(btn => {
@@ -762,13 +831,17 @@ class RegistraduriaScrap {
     try {
       console.log('⏳ Esperando resultados...');
 
-      // Si hubo navegación completa (form POST), esperar a que la nueva página cargue
-      try {
-        await this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 });
-        console.log('📡 Navegación de formulario completada');
-        await helpers.randomDelay(1000, 2000);
-      } catch (navErr) {
-        // No hubo navegación (AJAX) o ya completó antes de llegar aquí → continuar
+      // Si ya estamos en /Polling, no esperar navegación
+      const urlActual = this.page.url();
+      if (!/\/Polling|\/polling/i.test(urlActual)) {
+        // Si hubo navegación completa (form POST/SPA Router), esperar a que la nueva página cargue
+        try {
+          await this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 });
+          console.log('📡 Navegación de formulario completada, URL:', this.page.url());
+          await helpers.randomDelay(1000, 2000);
+        } catch (navErr) {
+          // No hubo navegación (AJAX) o ya completó antes de llegar aquí → continuar
+        }
       }
 
       // Esperar a que el contenido de resultados aparezca en el DOM
@@ -780,9 +853,9 @@ class RegistraduriaScrap {
             (bodyText.includes('puesto') && bodyText.includes('mesa')) ||
             bodyText.includes('nuip') ||
             bodyText.includes('c.c.') ||
-            bodyText.includes('lugar de votación') ||
-            bodyText.includes('puesto de votación') ||
-            bodyText.includes('mesa de votación');
+            bodyText.includes('lugar de votaci') ||
+            bodyText.includes('puesto de votaci') ||
+            bodyText.includes('mesa de votaci');
           const tieneError =
             bodyText.includes('no encontrado') ||
             bodyText.includes('no existe') ||
@@ -860,15 +933,67 @@ class RegistraduriaScrap {
         let mesa = '';
         let zona = '';
 
-        // ── Método 1: tabla HTML (nueva página wsp.registraduria.gov.co) ──────
-        // Estructura: <th>NUIP</th><th>DEPARTAMENTO</th><th>MUNICIPIO</th>
-        //             <th>PUESTO</th><th>DIRECCIÓN</th><th>MESA</th>
+        // Normaliza texto: minúsculas y sin tildes
+        const norm = s => s.toLowerCase()
+          .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i')
+          .replace(/ó/g,'o').replace(/ú/g,'u').replace(/ñ/g,'n')
+          .replace(/ü/g,'u').trim();
+
+        // ── Método 0: Nueva página eleccionescolombia (/Polling) ─────────────
+        // Layout de tarjeta: etiquetas en filas de grid, valores en fila siguiente.
+        // innerText devuelve cada celda en su propia línea: Puesto\nMesa\nZona\n02-IE...\n13\n00
+        {
+          const knownLabels = new Set(['puesto','mesa','zona','departamento','municipio','direccion']);
+          const bodyLines = document.body.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+          // Extraer C.C.
+          const ccMatch = document.body.innerText.match(/C\.C\.\s*(\d[\d\s]*\d|\d+)/);
+          if (ccMatch) documento = ccMatch[1].replace(/\s/g,'');
+
+          let i = 0;
+          while (i < bodyLines.length) {
+            if (knownLabels.has(norm(bodyLines[i]))) {
+              // Recopilar grupo de etiquetas consecutivas
+              const group = [];
+              let j = i;
+              while (j < bodyLines.length && knownLabels.has(norm(bodyLines[j]))) {
+                group.push(norm(bodyLines[j]));
+                j++;
+              }
+              // Recopilar misma cantidad de valores (inmediatamente después del grupo)
+              for (let k = 0; k < group.length && (j + k) < bodyLines.length; k++) {
+                const val = bodyLines[j + k].trim();
+                if (!val || knownLabels.has(norm(val))) break;
+                const lbl = group[k];
+                if (lbl === 'puesto'       && !puesto)       puesto       = val;
+                else if (lbl === 'mesa'         && !mesa)         mesa         = val;
+                else if (lbl === 'zona'         && !zona)         zona         = val;
+                else if (lbl === 'departamento' && !departamento) departamento = val;
+                else if (lbl === 'municipio'    && !municipio)    municipio    = val;
+                else if (lbl === 'direccion'    && !direccion)    direccion    = val;
+              }
+              i = j + group.length;
+            } else {
+              i++;
+            }
+          }
+        }
+
+        // Si ya tenemos los datos principales, retornar
+        if (departamento && municipio && puesto && mesa) {
+          return {
+            documento: documento || '',
+            datosElectorales: { departamento, municipio, puestoVotacion: puesto, direccion, mesa, zona }
+          };
+        }
+
+        // ── Método 1: tabla HTML (página wsp.registraduria.gov.co) ───────────
+        // Estructura: <th>NUIP</th><th>DEPARTAMENTO</th><th>MUNICIPIO</th>...
         const table = document.querySelector('table');
         if (table) {
           const headers = Array.from(table.querySelectorAll('th')).map(th =>
             th.textContent.trim().toUpperCase()
           );
-          // Obtener solo las celdas TD de la primera fila de datos
           const dataRow = table.querySelector('tbody tr') || table.querySelector('tr:nth-child(2)');
           const cells = dataRow
             ? Array.from(dataRow.querySelectorAll('td')).map(td => td.textContent.trim())
@@ -876,54 +1001,54 @@ class RegistraduriaScrap {
 
           const idx = (name) => headers.findIndex(h => h.includes(name));
 
-          const iNuip        = idx('NUIP');
-          const iDepto       = idx('DEPART');
-          const iMun         = idx('MUNIC');
-          const iPuesto      = idx('PUESTO');
-          const iDir         = idx('DIRECC');
-          const iMesa        = idx('MESA');
-          const iZona        = idx('ZONA');
+          const iNuip   = idx('NUIP');
+          const iDepto  = idx('DEPART');
+          const iMun    = idx('MUNIC');
+          const iPuesto = idx('PUESTO');
+          const iDir    = idx('DIRECC');
+          const iMesa   = idx('MESA');
+          const iZona   = idx('ZONA');
 
-          if (iNuip  >= 0 && cells[iNuip])   documento    = cells[iNuip];
-          if (iDepto >= 0 && cells[iDepto])   departamento = cells[iDepto];
-          if (iMun   >= 0 && cells[iMun])     municipio    = cells[iMun];
-          if (iPuesto >= 0 && cells[iPuesto]) puesto       = cells[iPuesto];
-          if (iDir   >= 0 && cells[iDir])     direccion    = cells[iDir];
-          if (iMesa  >= 0 && cells[iMesa])    mesa         = cells[iMesa];
-          if (iZona  >= 0 && cells[iZona])    zona         = cells[iZona];
+          if (iNuip   >= 0 && cells[iNuip])   documento    = cells[iNuip];
+          if (iDepto  >= 0 && cells[iDepto])   departamento = cells[iDepto];
+          if (iMun    >= 0 && cells[iMun])     municipio    = cells[iMun];
+          if (iPuesto >= 0 && cells[iPuesto])  puesto       = cells[iPuesto];
+          if (iDir    >= 0 && cells[iDir])     direccion    = cells[iDir];
+          if (iMesa   >= 0 && cells[iMesa])    mesa         = cells[iMesa];
+          if (iZona   >= 0 && cells[iZona])    zona         = cells[iZona];
         }
 
-        // ── Método 2: fallback por líneas (página antigua / cambios futuros) ──
+        // ── Método 2: fallback por líneas (maneja etiqueta + valor en misma línea) ──
         if (!departamento && !municipio) {
           const bodyText = document.body.innerText;
           const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-          // C.C. número
-          const ccMatch = bodyText.match(/C\.C\.\s*(\d+)/);
-          if (ccMatch) documento = ccMatch[1];
+          const ccMatch2 = bodyText.match(/C\.C\.\s*(\d+)/);
+          if (ccMatch2 && !documento) documento = ccMatch2[1];
 
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const next = (lines[i + 1] || '').trim();
 
-            if (/^Puesto$/i.test(line) && next && !/^(Mesa|Zona|Departamento|Municipio|Dirección)$/i.test(next))
+            if (/^Puesto$/i.test(line) && next && !/^(Mesa|Zona|Departamento|Municipio|Direcci)$/i.test(next))
               puesto = next;
             if (/^Mesa$/i.test(line) && /^\d+/.test(next))
               mesa = next;
-            if (/^Zona$/i.test(line) && next && !/^(Departamento|Municipio|Dirección|Puesto|Mesa)$/i.test(next))
+            if (/^Zona$/i.test(line) && next && !/^(Departamento|Municipio|Direcci|Puesto|Mesa)$/i.test(next))
               zona = next;
-            if (/^Departamento$/i.test(line) && next && !/^(Municipio|Dirección|Puesto|Mesa|Zona)$/i.test(next))
+            if (/^Departamento$/i.test(line) && next && !/^(Municipio|Direcci|Puesto|Mesa|Zona)$/i.test(next))
               departamento = next;
-            if (/^Municipio$/i.test(line) && next && !/^(Departamento|Dirección|Puesto|Mesa|Zona)$/i.test(next))
+            if (/^Municipio$/i.test(line) && next && !/^(Departamento|Direcci|Puesto|Mesa|Zona)$/i.test(next))
               municipio = next;
             if (/^Direcci[oó]n$/i.test(line) && next && !/^(Departamento|Municipio|Puesto|Mesa|Zona|Consultar)$/i.test(next))
               direccion = next;
 
+            // Tres columnas en la misma línea separadas por tabs o espacios múltiples
             if (line.includes('Puesto') && line.includes('Mesa') && line.includes('Zona')) {
               const vals = next.split(/\t+|\s{3,}/);
-              if (vals[0] && !puesto)  puesto = vals[0].trim();
-              if (vals[1] && !mesa)    mesa   = vals[1].trim();
-              if (vals[2] && !zona)    zona   = vals[2].trim();
+              if (vals[0] && !puesto) puesto = vals[0].trim();
+              if (vals[1] && !mesa)   mesa   = vals[1].trim();
+              if (vals[2] && !zona)   zona   = vals[2].trim();
             }
             if (line.includes('Departamento') && line.includes('Municipio') && line.includes('Direcci')) {
               const vals = next.split(/\t+|\s{3,}/);
@@ -939,10 +1064,10 @@ class RegistraduriaScrap {
           datosElectorales: {
             departamento: departamento || '',
             municipio:    municipio    || '',
-            puestoVotacion: puesto    || '',
-            direccion:    direccion   || '',
-            mesa:         mesa        || '',
-            zona:         zona        || ''
+            puestoVotacion: puesto     || '',
+            direccion:    direccion    || '',
+            mesa:         mesa         || '',
+            zona:         zona         || ''
           }
         };
       });

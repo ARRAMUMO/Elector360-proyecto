@@ -327,6 +327,42 @@ const operacionesMasivasService = {
   },
 
   /**
+   * Obtener líderes con conteo de personas y sin puesto
+   */
+  async getLideres() {
+    try {
+      const response = await api.get('/masivas/lideres');
+      return { success: response.data.success, data: response.data.data };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Error al obtener líderes' };
+    }
+  },
+
+  /**
+   * Encolar personas de un líder para actualización RPA
+   */
+  async actualizarPorLider(liderId, soloSinPuesto = false) {
+    try {
+      const response = await api.post('/masivas/actualizar-por-lider', { liderId, soloSinPuesto });
+      return { success: response.data.success, data: response.data.data, message: response.data.message };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Error al encolar personas' };
+    }
+  },
+
+  /**
+   * Cancelar todas las consultas pendientes de esta campaña
+   */
+  async cancelarCola() {
+    try {
+      const response = await api.post('/masivas/cancelar-cola');
+      return { success: response.data.success, data: response.data.data, message: response.data.message };
+    } catch (error) {
+      return { success: false, error: error.response?.data?.error || 'Error al cancelar cola' };
+    }
+  },
+
+  /**
    * Polling del estado de operaciones masivas
    * @param {Function} onUpdate - Callback de actualización
    * @param {number} maxIntentos - Máximo de intentos (default: 180)

@@ -1,6 +1,7 @@
 const asyncHandler = require('../utils/asyncHandler');
 const consultaService = require('../services/consultaService');
 const ApiError = require('../utils/ApiError');
+const rpaWorker = require('../workers/main.worker');
 
 /**
  * @desc    Consultar persona por cédula
@@ -24,6 +25,11 @@ exports.consultarPersona = asyncHandler(async (req, res) => {
     req.user._id,
     req.campanaId
   );
+
+  // Si se encoló una consulta RPA, asegurarse de que el worker esté procesando
+  if (resultado.consultaId && rpaWorker.isInitialized() && !rpaWorker.isPolling()) {
+    rpaWorker.startProcessing();
+  }
 
   res.json({
     success: true,
@@ -116,6 +122,41 @@ exports.registrarNuevaPersona = asyncHandler(async (req, res) => {
     success: true,
     message: 'Persona registrada en tu campaña exitosamente',
     data: persona
+  });
+});
+
+/**
+ * @desc    Forzar nueva consulta RPA para persona existente en BD
+ * @route   POST /api/v1/consultas/solicitar-actualizacion
+ * @access  Private
+ */
+exports.solicitarActualizacionRPA = asyncHandler(async (req, res) => {
+  const { documento, prioridad = 2 } = req.body;
+
+  if (!documento) {
+    throw new ApiError(400, 'El documento es requerido');
+  }
+
+  if (!/^\d{5,10}$/.test(documento)) {
+    throw new ApiError(400, 'Documento debe tener entre 5 y 10 dígitos');
+  }
+
+  const consulta = await consultaService.encolarConsulta(
+    documento,
+    req.user._id,
+    prioridad,
+    null,
+    req.campanaId
+  );
+
+  // Si el worker está inicializado pero en standby, arrancarlo automáticamente
+  if (rpaWorker.isInitialized() && !rpaWorker.isPolling()) {
+    rpaWorker.startProcessing();
+  }
+
+  res.json({
+    success: true,
+    data: consulta
   });
 });
 

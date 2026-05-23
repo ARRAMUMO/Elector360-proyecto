@@ -21,7 +21,7 @@ const consultaRPASchema = new mongoose.Schema({
   },
   estado: {
     type: String,
-    enum: ['EN_COLA', 'PROCESANDO', 'COMPLETADO', 'ERROR'],
+    enum: ['EN_COLA', 'PROCESANDO', 'COMPLETADO', 'ERROR', 'CANCELADO'],
     default: 'EN_COLA'
   },
   prioridad: {

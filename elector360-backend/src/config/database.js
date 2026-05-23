@@ -1,4 +1,8 @@
+const dns = require('dns');
 const mongoose = require('mongoose');
+
+// El DNS local no resuelve registros SRV de MongoDB Atlas; forzar Google DNS
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const connectDB = async () => {
   try {

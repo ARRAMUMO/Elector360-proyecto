@@ -28,6 +28,11 @@ function OperacionesMasivas() {
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('consultar');
+
+  // Estado tab Por Líder
+  const [lideres, setLideres] = useState([]);
+  const [loadingLideres, setLoadingLideres] = useState(false);
+  const [encolandoLider, setEncolandoLider] = useState(null);
   const [file, setFile] = useState(null);
   const [resultados, setResultados] = useState(null);
   const [estado, setEstado] = useState(null);
@@ -260,6 +265,49 @@ function OperacionesMasivas() {
     prevEnProcesoRef.current = estado?.enProceso ?? null;
   }, [estado?.enProceso]);
 
+  const cargarLideres = async () => {
+    setLoadingLideres(true);
+    const resultado = await operacionesMasivasService.getLideres();
+    if (resultado.success) setLideres(resultado.data);
+    else setAlert({ type: 'error', message: resultado.error });
+    setLoadingLideres(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'lideres') cargarLideres();
+  }, [activeTab]);
+
+  const handleActualizarPorLider = async (liderId, soloSinPuesto) => {
+    const lider = lideres.find(l => l._id === liderId);
+    const cantidad = soloSinPuesto ? lider?.sinPuesto : lider?.totalPersonas;
+    const tipo = soloSinPuesto ? 'sin puesto de votación' : 'en total';
+    if (!confirm(`¿Encolar ${cantidad} personas (${tipo}) de "${lider?.nombre}" para actualización RPA?`)) return;
+
+    setEncolandoLider(liderId + (soloSinPuesto ? '-sin' : '-all'));
+    const resultado = await operacionesMasivasService.actualizarPorLider(liderId, soloSinPuesto);
+    if (resultado.success) {
+      setAlert({ type: 'success', message: resultado.message });
+      cargarLideres();
+      cargarEstado();
+      setActiveTab('estado');
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+    setEncolandoLider(null);
+  };
+
+  const handleCancelarCola = async () => {
+    const pendientes = (estado?.pendientes || 0) + (estado?.procesando || 0);
+    if (!confirm(`¿Cancelar ${pendientes} consultas pendientes? Esta acción no se puede deshacer.`)) return;
+    const resultado = await operacionesMasivasService.cancelarCola();
+    if (resultado.success) {
+      setAlert({ type: 'success', message: `🚫 ${resultado.message}` });
+      cargarEstado();
+    } else {
+      setAlert({ type: 'error', message: resultado.error });
+    }
+  };
+
   const handleLimpiarCola = async () => {
     if (!confirm('¿Estás seguro de limpiar la cola de consultas completadas (más de 7 días)?')) {
       return;
@@ -381,6 +429,18 @@ function OperacionesMasivas() {
               <span className="text-base sm:text-lg mr-1">📊</span>
               <span className="hidden sm:inline">Estado</span>
               <span className="sm:hidden">Estado</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('lideres')}
+              className={`flex-1 sm:flex-none px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === 'lideres'
+                  ? 'border-primary-600 text-primary-600 bg-primary-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <span className="text-base sm:text-lg mr-1">👥</span>
+              <span className="hidden sm:inline">Por Líder</span>
+              <span className="sm:hidden">Líder</span>
             </button>
           </nav>
         </div>
@@ -905,6 +965,15 @@ function OperacionesMasivas() {
                       <span className="mr-2">🔄</span>
                       Actualizar Estado
                     </button>
+                    {((estado?.pendientes || 0) + (estado?.procesando || 0)) > 0 && (
+                      <button
+                        onClick={handleCancelarCola}
+                        className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors font-medium"
+                      >
+                        <span className="mr-2">🚫</span>
+                        Cancelar Cola ({(estado?.pendientes || 0) + (estado?.procesando || 0)})
+                      </button>
+                    )}
                     <button
                       onClick={handleLimpiarCola}
                       className="flex-1 inline-flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
@@ -916,6 +985,87 @@ function OperacionesMasivas() {
                 </>
               ) : (
                 <Spinner message="Cargando estado..." />
+              )}
+            </div>
+          )}
+          {/* Tab 4: Por Líder */}
+          {activeTab === 'lideres' && (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Actualizar por Líder</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Selecciona un líder para encolar sus votantes y actualizar el puesto de votación en la Registraduría.
+                  </p>
+                </div>
+                <button
+                  onClick={cargarLideres}
+                  disabled={loadingLideres}
+                  className="px-3 py-2 text-sm bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
+                >
+                  {loadingLideres ? 'Cargando...' : '🔄 Actualizar'}
+                </button>
+              </div>
+
+              {loadingLideres ? (
+                <div className="py-12 text-center text-gray-400">Cargando líderes...</div>
+              ) : lideres.length === 0 ? (
+                <div className="py-12 text-center text-gray-400">
+                  No hay líderes con personas asignadas en esta campaña.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gradient-to-r from-primary-50 to-primary-100">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Líder</th>
+                        <th className="px-4 py-3 text-center font-semibold text-gray-700">Total</th>
+                        <th className="px-4 py-3 text-center font-semibold text-gray-700">Sin puesto</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-700">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {lideres.map((lider) => (
+                        <tr key={lider._id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-gray-900">{lider.nombre}</p>
+                            <p className="text-xs text-gray-400">{lider.email}</p>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="text-lg font-bold text-gray-800">{lider.totalPersonas}</span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`text-lg font-bold ${lider.sinPuesto > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {lider.sinPuesto}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                            {lider.sinPuesto > 0 && (
+                              <button
+                                onClick={() => handleActualizarPorLider(lider._id, true)}
+                                disabled={encolandoLider !== null}
+                                className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
+                              >
+                                {encolandoLider === lider._id + '-sin'
+                                  ? 'Encolando...'
+                                  : `Solo sin puesto (${lider.sinPuesto})`}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleActualizarPorLider(lider._id, false)}
+                              disabled={encolandoLider !== null}
+                              className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium"
+                            >
+                              {encolandoLider === lider._id + '-all'
+                                ? 'Encolando...'
+                                : `Actualizar todos (${lider.totalPersonas})`}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}

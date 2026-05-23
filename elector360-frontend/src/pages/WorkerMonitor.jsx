@@ -16,6 +16,11 @@ function WorkerMonitor() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [activeTab, setActiveTab] = useState('stats');
 
+  // Estado tab Por Líder
+  const [lideres, setLideres] = useState([]);
+  const [loadingLideres, setLoadingLideres] = useState(false);
+  const [encolandoLider, setEncolandoLider] = useState(null); // _id del líder en proceso
+
   useEffect(() => {
     cargarDatos();
 
@@ -27,6 +32,10 @@ function WorkerMonitor() {
       return () => clearInterval(interval);
     }
   }, [autoRefresh, filtroEstado]);
+
+  useEffect(() => {
+    if (activeTab === 'lideres') cargarLideres();
+  }, [activeTab]);
 
   const cargarDatos = async () => {
     try {
@@ -57,12 +66,11 @@ function WorkerMonitor() {
   };
 
   const handlePauseWorker = async () => {
-    if (!confirm('¿Pausar el worker RPA?')) return;
-
+    if (!confirm('¿Pausar el procesamiento? El worker quedará en standby.')) return;
     try {
       const response = await api.post('/worker/pause');
       if (response.data.success) {
-        setAlert({ type: 'success', message: 'Worker pausado' });
+        setAlert({ type: 'success', message: '⏸️ Worker en standby — no procesará consultas' });
         cargarDatos();
       }
     } catch (error) {
@@ -74,11 +82,60 @@ function WorkerMonitor() {
     try {
       const response = await api.post('/worker/resume');
       if (response.data.success) {
-        setAlert({ type: 'success', message: 'Worker reanudado' });
+        setAlert({ type: 'success', message: '▶️ Worker iniciando procesamiento de consultas' });
         cargarDatos();
       }
     } catch (error) {
-      setAlert({ type: 'error', message: error.response?.data?.error || 'Error reanudando worker' });
+      setAlert({ type: 'error', message: error.response?.data?.error || 'Error iniciando worker' });
+    }
+  };
+
+  const cargarLideres = async () => {
+    setLoadingLideres(true);
+    try {
+      const res = await api.get('/worker/lideres');
+      if (res.data.success) setLideres(res.data.data);
+    } catch (error) {
+      setAlert({ type: 'error', message: 'Error cargando líderes' });
+    } finally {
+      setLoadingLideres(false);
+    }
+  };
+
+  const handleActualizarPorLider = async (liderId, soloSinPuesto) => {
+    const lider = lideres.find(l => l._id === liderId);
+    const cantidad = soloSinPuesto ? lider?.sinPuesto : lider?.totalPersonas;
+    const tipo = soloSinPuesto ? 'sin puesto de votación' : 'en total';
+    if (!confirm(`¿Encolar ${cantidad} personas (${tipo}) de "${lider?.nombre}" para actualización RPA?`)) return;
+
+    setEncolandoLider(liderId + (soloSinPuesto ? '-sin' : '-all'));
+    try {
+      const response = await api.post('/worker/actualizar-por-lider', { liderId, soloSinPuesto });
+      if (response.data.success) {
+        setAlert({ type: 'success', message: response.data.message });
+        cargarLideres();
+        cargarDatos();
+      }
+    } catch (error) {
+      setAlert({ type: 'error', message: error.response?.data?.error || 'Error encolando' });
+    } finally {
+      setEncolandoLider(null);
+    }
+  };
+
+  const handleCancelarTodas = async () => {
+    if (!confirm('¿Cancelar TODAS las consultas pendientes y en ejecución? Esta acción no se puede deshacer.')) return;
+    try {
+      const response = await api.post('/worker/cancelar-todas');
+      if (response.data.success) {
+        setAlert({
+          type: 'success',
+          message: `🚫 ${response.data.message}`
+        });
+        cargarDatos();
+      }
+    } catch (error) {
+      setAlert({ type: 'error', message: error.response?.data?.error || 'Error cancelando consultas' });
     }
   };
 
@@ -157,9 +214,11 @@ function WorkerMonitor() {
   const getEstadoBadge = (estado) => {
     const badges = {
       EN_COLA: 'bg-yellow-100 text-yellow-800',
+      PENDIENTE: 'bg-yellow-100 text-yellow-800',
       PROCESANDO: 'bg-blue-100 text-blue-800',
       COMPLETADO: 'bg-green-100 text-green-800',
-      ERROR: 'bg-red-100 text-red-800'
+      ERROR: 'bg-red-100 text-red-800',
+      CANCELADO: 'bg-gray-100 text-gray-500 line-through'
     };
     return badges[estado] || 'bg-gray-100 text-gray-800';
   };
@@ -262,6 +321,16 @@ function WorkerMonitor() {
           >
             Logs Recientes
           </button>
+          <button
+            onClick={() => setActiveTab('lideres')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'lideres'
+                ? 'border-emerald-500 text-emerald-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Por Líder
+          </button>
         </nav>
       </div>
 
@@ -310,21 +379,65 @@ function WorkerMonitor() {
                 </div>
               </div>
 
+              {/* Estado del Worker */}
+              <div className={`rounded-xl border-2 p-5 ${
+                stats.worker.isPolling
+                  ? 'bg-green-50 border-green-200'
+                  : stats.worker.isRunning
+                    ? 'bg-yellow-50 border-yellow-200'
+                    : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-3 h-3 rounded-full ${
+                      stats.worker.isPolling ? 'bg-green-500 animate-pulse' :
+                      stats.worker.isRunning ? 'bg-yellow-500' : 'bg-gray-400'
+                    }`} />
+                    <div>
+                      <p className="font-semibold text-gray-900">
+                        {stats.worker.isPolling
+                          ? 'Procesando consultas'
+                          : stats.worker.isRunning
+                            ? 'En standby — listo pero inactivo'
+                            : 'Apagado'}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {stats.worker.isPolling
+                          ? 'El worker está tomando consultas de la cola'
+                          : stats.worker.isRunning
+                            ? 'Los browsers están listos. Presiona "Iniciar" para comenzar.'
+                            : 'El worker no está inicializado'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Controles */}
               <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-4">Controles del Worker</h3>
                 <div className="flex flex-wrap gap-3">
+                  {stats.worker.isPolling ? (
+                    <button
+                      onClick={handlePauseWorker}
+                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors font-medium"
+                    >
+                      ⏸️ Pausar (Standby)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleResumeWorker}
+                      disabled={!stats.worker.isRunning}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ▶️ Iniciar Procesamiento
+                    </button>
+                  )}
                   <button
-                    onClick={handlePauseWorker}
-                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors font-medium"
+                    onClick={handleCancelarTodas}
+                    className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors font-medium"
                   >
-                    ⏸️ Pausar Worker
-                  </button>
-                  <button
-                    onClick={handleResumeWorker}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
-                  >
-                    ▶️ Reanudar Worker
+                    🚫 Cancelar Todo
                   </button>
                   <button
                     onClick={handleRetryAll}
@@ -360,6 +473,7 @@ function WorkerMonitor() {
                     <option value="PROCESANDO">Procesando</option>
                     <option value="COMPLETADO">Completado</option>
                     <option value="ERROR">Error</option>
+                    <option value="CANCELADO">Cancelado</option>
                   </select>
                   <span className="text-sm text-gray-500">
                     Total: {colaPagination.total} consultas
@@ -542,6 +656,91 @@ function WorkerMonitor() {
             </div>
           )}
         </>
+      )}
+
+      {/* Tab: Por Líder */}
+      {activeTab === 'lideres' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              Selecciona un líder y encola sus votantes para actualizar el puesto de votación en la Registraduría.
+            </p>
+            <button
+              onClick={cargarLideres}
+              disabled={loadingLideres}
+              className="px-3 py-2 text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 font-medium"
+            >
+              {loadingLideres ? 'Cargando...' : '🔄 Actualizar'}
+            </button>
+          </div>
+
+          {loadingLideres ? (
+            <div className="bg-white rounded-xl border border-emerald-100 p-12 text-center text-gray-400">
+              Cargando líderes...
+            </div>
+          ) : lideres.length === 0 ? (
+            <div className="bg-white rounded-xl border border-emerald-100 p-12 text-center text-gray-400">
+              No hay líderes con personas asignadas.
+            </div>
+          ) : (
+            <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-emerald-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gradient-to-r from-emerald-50 to-teal-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">Líder</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-800 uppercase">Campaña</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-emerald-800 uppercase">Total votantes</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-emerald-800 uppercase">Sin puesto</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-emerald-800 uppercase">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {lideres.map((lider) => (
+                      <tr key={lider._id} className="hover:bg-emerald-50/50">
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium text-gray-900">{lider.nombre}</p>
+                          <p className="text-xs text-gray-400">{lider.email}</p>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-500">
+                          {lider.campana?.nombre || '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-lg font-bold text-gray-800">{lider.totalPersonas}</span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`text-lg font-bold ${lider.sinPuesto > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {lider.sinPuesto}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                          {lider.sinPuesto > 0 && (
+                            <button
+                              onClick={() => handleActualizarPorLider(lider._id, true)}
+                              disabled={encolandoLider !== null}
+                              className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium transition-colors"
+                              title="Encolar solo los que no tienen puesto de votación"
+                            >
+                              {encolandoLider === lider._id + '-sin' ? 'Encolando...' : `Solo sin puesto (${lider.sinPuesto})`}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleActualizarPorLider(lider._id, false)}
+                            disabled={encolandoLider !== null}
+                            className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-medium transition-colors"
+                            title="Encolar todos los votantes de este líder"
+                          >
+                            {encolandoLider === lider._id + '-all' ? 'Encolando...' : `Actualizar todos (${lider.totalPersonas})`}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

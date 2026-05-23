@@ -17,6 +17,7 @@ class WorkerPool extends EventEmitter {
     this.queue = [];
     this.activeJobs = 0;
     this.isShuttingDown = false;
+    this.isAddingWorker = false; // guard contra addWorker() concurrente
     
     // Circuit breaker
     this.circuitBreaker = new CircuitBreaker(config.circuitBreaker);
@@ -78,9 +79,10 @@ class WorkerPool extends EventEmitter {
     }
     
     try {
-      const worker = new RegistraduriaScrap();
+      const workerIndex = this.workers.length;
+      const worker = new RegistraduriaScrap(workerIndex);
       await worker.init();
-      
+
       const workerId = `worker-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
       this.workers.push({
@@ -195,12 +197,14 @@ class WorkerPool extends EventEmitter {
     }
 
     if (!availableWorker) {
-      // No hay worker disponible: crear uno nuevo
-      if (this.workers.length < this.maxWorkers) {
-        const newId = await this.addWorker();
-        if (newId) {
-          // Reintentar inmediatamente con el nuevo worker
-          setImmediate(() => this.processQueue());
+      // No hay worker disponible: crear uno nuevo (solo si no hay otro ya creándose)
+      if (this.workers.length < this.maxWorkers && !this.isAddingWorker) {
+        this.isAddingWorker = true;
+        try {
+          const newId = await this.addWorker();
+          if (newId) setImmediate(() => this.processQueue());
+        } finally {
+          this.isAddingWorker = false;
         }
       }
       return;
@@ -315,6 +319,22 @@ class WorkerPool extends EventEmitter {
         : '0%',
       circuitBreaker: this.circuitBreaker.getState()
     };
+  }
+
+  /**
+   * Cancelar todos los jobs pendientes en la cola en memoria.
+   * Los jobs que ya están ejecutándose en un browser no se interrumpen;
+   * main.worker los marcará como CANCELADO en BD para que handleJobCompleted los ignore.
+   */
+  cancelAll() {
+    const cancelados = this.queue.length;
+    for (const item of this.queue) {
+      item.reject(new Error('Consulta cancelada'));
+    }
+    this.queue = [];
+    this.stats.inQueue = 0;
+    console.log(`🚫 ${cancelados} jobs eliminados de la cola en memoria`);
+    return cancelados;
   }
 
   /**

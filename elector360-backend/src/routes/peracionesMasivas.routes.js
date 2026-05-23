@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const operacionesMasivasController = require('../controllers/operacionesMasivasController');
+const workerController = require('../controllers/worker.controller');
 const { protect } = require('../middleware/auth');
 const { requireCoordinador } = require('../middleware/validateRole');
 const { resolveCampaign } = require('../middleware/campaignScope');
@@ -48,6 +49,15 @@ router.delete('/errores/:id', operacionesMasivasController.eliminarConsulta);
 
 // Limpiar cola antigua
 router.delete('/limpiar-cola', operacionesMasivasController.limpiarCola);
+
+// Cancelar todas las consultas pendientes de esta campaña
+router.post('/cancelar-cola', operacionesMasivasController.cancelarColaCampana);
+
+// Líderes con conteo de personas y sin puesto
+router.get('/lideres', workerController.getLideres);
+
+// Encolar personas de un líder para actualización RPA
+router.post('/actualizar-por-lider', workerController.actualizarPorLider);
 
 // Descargar plantilla Excel
 router.get('/plantilla', operacionesMasivasController.descargarPlantilla);

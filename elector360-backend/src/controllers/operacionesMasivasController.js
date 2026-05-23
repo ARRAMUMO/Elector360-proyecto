@@ -3,6 +3,7 @@ const operacionesMasivasService = require('../services/operacionesMasivasService
 const ApiError = require('../utils/ApiError');
 const path = require('path');
 const fs = require('fs').promises;
+const ColaConsulta = require('../models/ColaConsulta');
 
 /**
  * @desc    Actualizar toda la base de datos
@@ -338,4 +339,28 @@ exports.descargarPlantilla = asyncHandler(async (req, res) => {
 
   await workbook.xlsx.write(res);
   res.end();
+});
+
+/**
+ * @desc    Cancelar todas las consultas pendientes de esta campaña
+ * @route   POST /api/v1/masivas/cancelar-cola
+ * @access  Private (Coordinador+)
+ */
+exports.cancelarColaCampana = asyncHandler(async (req, res) => {
+  const filtro = { estado: { $in: ['PENDIENTE', 'PROCESANDO'] } };
+  if (req.campanaId) filtro.campana = req.campanaId;
+
+  const resultado = await ColaConsulta.updateMany(filtro, {
+    $set: {
+      estado: 'CANCELADO',
+      ultimoError: 'Cancelado manualmente',
+      fechaProcesamiento: new Date()
+    }
+  });
+
+  res.json({
+    success: true,
+    message: `${resultado.modifiedCount} consultas canceladas`,
+    data: { canceladas: resultado.modifiedCount }
+  });
 });

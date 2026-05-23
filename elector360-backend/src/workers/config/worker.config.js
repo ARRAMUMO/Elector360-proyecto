@@ -3,35 +3,58 @@
 const path = require('path');
 const isProduction = process.env.NODE_ENV === 'production';
 
-// Directorio persistente de Chrome (guarda cookies/historial para que reCAPTCHA
+// Directorio persistente de Chromium (guarda cookies/historial para que reCAPTCHA
 // reconozca el navegador como "real" y dé el checkbox simple en vez de imágenes)
 const chromeProfileDir = process.env.CHROME_PROFILE_DIR ||
   path.join(__dirname, '..', '..', '..', 'chrome-profile');
 
+// Resolver executablePath: variable de entorno tiene prioridad.
+// Si no está definida, usar puppeteer.executablePath() que apunta al Chromium
+// instalado con `npx puppeteer browsers install chrome`.
+// puppeteer-extra usa puppeteer-core internamente y NO auto-detecta el path,
+// por eso hay que pasarlo explícito siempre.
+let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '';
+if (!executablePath) {
+  try {
+    executablePath = require('puppeteer').executablePath();
+  } catch (_) {
+    // fallback: ruta conocida del cache de puppeteer en Windows
+    const os = require('os');
+    const fs = require('fs');
+    const candidate = path.join(os.homedir(), '.cache', 'puppeteer', 'chrome', 'win64-144.0.7559.96', 'chrome-win64', 'chrome.exe');
+    if (fs.existsSync(candidate)) executablePath = candidate;
+  }
+}
+
 module.exports = {
   // Configuración de Puppeteer
   puppeteer: {
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath,
     headless: isProduction ? 'new' : false,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      // Anti-detección: no deshabilitar GPU ni aceleración (parece más humano)
+      '--disable-gpu',
+
+      // ── Anti-detección ────────────────────────────────────────────────────
       '--disable-blink-features=AutomationControlled',
       '--disable-infobars',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--flag-switches-begin',
-      '--flag-switches-end',
-      ...(isProduction
-        ? ['--window-size=1920,1080', '--disable-gpu']
-        : ['--start-maximized']),
-      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      '--disable-default-apps',
+
+      // Resolución y ventana realistas
+      '--window-size=1366,768',
+
+      // Locale colombiano (reduce fingerprint anómalo)
+      '--lang=es-CO',
+      '--accept-lang=es-CO,es,en-US,en',
     ],
     defaultViewport: isProduction ? { width: 1920, height: 1080 } : null,
-    // Perfil persistente: guarda cookies, localStorage, historial
+    // Perfil persistente: guarda cookies, historial → reCAPTCHA nos trata como usuario real
     userDataDir: chromeProfileDir,
-    timeout: 120000
+    timeout: 120000,
+    // Ignorar errores de certificados de páginas internas del gobierno
+    ignoreHTTPSErrors: true,
   },
 
   isProduction,
@@ -45,7 +68,7 @@ module.exports = {
 
   // URLs
   urls: {
-    registraduria: 'https://wsp.registraduria.gov.co/censo/consultar'
+    registraduria: 'https://eleccionescolombia.registraduria.gov.co/identificacion'
   },
 
   // Configuración de reintentos

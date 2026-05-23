@@ -88,6 +88,27 @@ router.delete('/consulta/:consultaId', workerController.eliminarConsulta);
 router.patch('/consulta/:consultaId/prioridad', workerController.cambiarPrioridad);
 
 /**
+ * @route   GET /api/v1/worker/lideres
+ * @desc    Obtener líderes con conteo de personas y sin puesto
+ * @access  Admin
+ */
+router.get('/lideres', workerController.getLideres);
+
+/**
+ * @route   POST /api/v1/worker/actualizar-por-lider
+ * @desc    Encolar personas de un líder para actualización RPA
+ * @access  Admin
+ */
+router.post('/actualizar-por-lider', workerController.actualizarPorLider);
+
+/**
+ * @route   POST /api/v1/worker/cancelar-todas
+ * @desc    Cancelar todas las consultas pendientes y en ejecución
+ * @access  Admin
+ */
+router.post('/cancelar-todas', workerController.cancelarTodasConsultas);
+
+/**
  * @route   POST /api/v1/worker/retry-all
  * @desc    Reintentar todas las consultas con error
  * @access  Admin

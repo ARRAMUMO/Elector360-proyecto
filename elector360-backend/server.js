@@ -26,6 +26,7 @@ const campanaRoutes = require('./src/routes/campana.routes');
 
 const workerRoutes = require('./src/routes/worker.routes');
 const e14Routes = require('./src/routes/e14.routes');
+const informesRoutes = require('./src/routes/informes.routes');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -97,6 +98,7 @@ app.use('/api/v1/masivas', operacionesMasivasRoutes);
 app.use('/api/v1/campanas', campanaRoutes);
 app.use('/api/v1/worker', workerRoutes);
 app.use('/api/v1/e14', e14Routes);
+app.use('/api/v1/informes', informesRoutes);
 
 // Ruta 404
 app.use('*', (req, res) => {

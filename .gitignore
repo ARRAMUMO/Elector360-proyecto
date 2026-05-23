@@ -31,6 +31,10 @@ coverage/
 # Puppeteer screenshots
 screenshots/
 
+# Chrome profile (Puppeteer) - archivos internos del browser, no deben versionarse
+chrome-profile/
+chrome-profile-*/
+
 # Temp files
 *.tmp
 nul

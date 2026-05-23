@@ -21,7 +21,7 @@ const colaConsultaSchema = new mongoose.Schema({
   },
   estado: {
     type: String,
-    enum: ['PENDIENTE', 'PROCESANDO', 'COMPLETADO', 'ERROR'],
+    enum: ['PENDIENTE', 'PROCESANDO', 'COMPLETADO', 'ERROR', 'CANCELADO'],
     default: 'PENDIENTE'
   },
   intentos: {

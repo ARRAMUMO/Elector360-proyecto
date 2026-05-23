@@ -133,6 +133,16 @@ class ConsultaService {
    * 3 = BAJA (actualizacion programada)
    */
   async encolarConsulta(documento, usuarioId, prioridad = 2, personaId = null, campanaId = null) {
+    // Evitar duplicados: si ya hay una consulta EN_COLA o PROCESANDO para este documento, reutilizarla
+    const existente = await ConsultaRPA.findOne({
+      documento,
+      estado: { $in: ['EN_COLA', 'PROCESANDO'] }
+    });
+    if (existente) {
+      console.log(`♻️ Consulta ya en cola para ${documento} (id: ${existente._id}), reutilizando`);
+      return existente;
+    }
+
     const consulta = new ConsultaRPA({
       documento,
       usuario: usuarioId,
@@ -183,7 +193,22 @@ class ConsultaService {
         response.noCensado = true;
         response.mensaje = 'Cédula no encontrada en el censo electoral de la Registraduría';
       } else {
-        response.mensaje = consulta.error || 'Error en la consulta';
+        // Aunque la ConsultaRPA falló, verificar si la persona fue actualizada
+        // por otro proceso (ej: ColaConsulta corrió en paralelo)
+        const cincoMinAtras = new Date(Date.now() - 5 * 60 * 1000);
+        const persona = await Persona.findOne({
+          documento: consulta.documento,
+          estadoRPA: 'ACTUALIZADO',
+          fechaUltimaConsulta: { $gte: cincoMinAtras }
+        });
+        if (persona?.puesto?.departamento) {
+          response.estado = 'COMPLETADO';
+          response.persona = persona;
+          response.mensaje = 'Datos actualizados exitosamente';
+          delete response.error;
+        } else {
+          response.mensaje = consulta.error || 'Error en la consulta';
+        }
       }
     } else if (consulta.estado === 'PROCESANDO') {
       response.mensaje = 'Consultando en Registraduria...';

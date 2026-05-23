@@ -252,7 +252,15 @@ function Consulta() {
                 fuente: 'Registraduría Nacional',
                 tiempoEjecucion: resultado.consulta.tiempoEjecucion
               }));
-              setAlert({ type: 'success', message: '✅ Consulta completada exitosamente' });
+              setAlert({ type: 'success', message: '✅ Consulta completada. Datos guardados exitosamente.' });
+            } else {
+              setEstadoBusqueda(prev => ({
+                ...prev,
+                tipo: 'completada_rpa',
+                fuente: 'Registraduría Nacional',
+                tiempoEjecucion: resultado.consulta.tiempoEjecucion
+              }));
+              setAlert({ type: 'success', message: '✅ Consulta completada exitosamente.' });
             }
             return; // Terminado
           }
@@ -260,7 +268,22 @@ function Consulta() {
           // Consulta con error
           if (resultado.consulta.estado === 'ERROR') {
             clearInterval(intervaloProgreso);
+            setProgreso(100);
             setPolling(false);
+
+            // Si el backend detectó que el dato fue actualizado por otro proceso, mostrar como éxito
+            if (resultado.consulta.persona?.puesto?.departamento) {
+              setResultado(resultado.consulta.persona);
+              setEstadoBusqueda(prev => ({
+                ...prev,
+                tipo: 'completada_rpa',
+                fuente: 'Registraduría Nacional',
+                tiempoEjecucion: resultado.consulta.tiempoEjecucion
+              }));
+              setAlert({ type: 'success', message: '✅ Datos actualizados desde la Registraduría.' });
+              return;
+            }
+
             if (resultado.consulta.noCensado) {
               setEstadoBusqueda(prev => ({
                 ...prev,
@@ -598,12 +621,12 @@ function Consulta() {
       const respuesta = await personaService.actualizar(resultado._id, { estadoVoto: 'CUMPLIDO' });
       if (respuesta.success) {
         setResultado(prev => ({ ...prev, estadoVoto: 'CUMPLIDO' }));
-        addToast('Voto confirmado', 'success');
+        addToast({ type: 'success', message: '✅ Voto confirmado exitosamente' });
       } else {
-        addToast(respuesta.error || 'Error al confirmar voto', 'error');
+        addToast({ type: 'error', message: respuesta.error || 'Error al confirmar voto' });
       }
     } catch {
-      addToast('Error al confirmar voto', 'error');
+      addToast({ type: 'error', message: 'Error al confirmar voto' });
     } finally {
       setConfirmandoVoto(false);
     }
@@ -1262,15 +1285,28 @@ function Consulta() {
                   <p className="text-sm font-medium text-gray-700">¿Deseas agregar esta persona a tu base de datos?</p>
                   <p className="text-xs text-gray-500 mt-1">Podrás completar los datos que falten antes de guardar</p>
                 </div>
-                <button
-                  onClick={abrirModalConfirmar}
-                  className="inline-flex items-center px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors shadow-sm"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Agregar a Mi Base
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={solicitarActualizacion}
+                    disabled={loading || polling}
+                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Consultar puesto de votación actualizado en la Registraduría"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {loading || polling ? 'Consultando...' : 'Actualizar Registraduría'}
+                  </button>
+                  <button
+                    onClick={abrirModalConfirmar}
+                    className="inline-flex items-center px-5 py-2.5 bg-green-600 text-white text-sm font-semibold rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors shadow-sm"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Agregar a Mi Base
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1333,6 +1369,17 @@ function Consulta() {
                       Editar Persona
                     </button>
                   )}
+                  <button
+                    onClick={solicitarActualizacion}
+                    disabled={loading || polling}
+                    className="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Consultar puesto de votación actualizado en la Registraduría"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {loading || polling ? 'Consultando...' : 'Actualizar Registraduría'}
+                  </button>
                 </div>
               </div>
             </div>

@@ -17,6 +17,7 @@ import authService from './services/authService';
 // Importar
 import WorkerMonitor from './pages/WorkerMonitor';
 import E14 from './pages/E14';
+import Informes from './pages/Informes';
 
 function App() {
   const isAuthenticated = authService.isAuthenticated();
@@ -81,6 +82,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="ADMIN">
                 <WorkerMonitor />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="informes"
+            element={
+              <ProtectedRoute requiredRole="ADMIN">
+                <Informes />
               </ProtectedRoute>
             }
           />
